@@ -2024,6 +2024,7 @@ async def workers_rating(message: types.Message, state: FSMContext):
     await send_long_message(message, text, parse_mode=None)
 
 
+
 # ==================== ИТОГИ МЕСЯЦА ====================
 
 @dp.message(F.text == "💼 Итоги месяца")
@@ -2091,10 +2092,10 @@ async def month_salary_summary(message: types.Message, state: FSMContext):
         text += f"   📊 К выплате: {int(w['to_pay'])} руб\n\n"
 
     text += f"━━━━━━━━━━━━━━━━━━━\n"
-    text += f"💰 Всего заработано: {int(grand_earned)} руб\n"
-    text += f"💳 Всего авансов: {int(grand_advance)} руб\n"
-    text += f"━━━━━━━━━━━━━━━━━━━\n"
-    text += f"💼 ИТОГО К ВЫПЛАТЕ: {int(grand_to_pay)} руб\n"
+    text += f"👥 Работников: {len(worker_list)}\n"
+    text += f"💰 Общий фонд зарплат: {int(grand_earned)} руб\n"
+    text += f"💳 Выдано авансами: {int(grand_advance)} руб\n"
+    text += f"💼 Осталось выплатить: {int(grand_to_pay)} руб\n"
     text += f"━━━━━━━━━━━━━━━━━━━\n\n"
 
     if grand_to_pay > 0:
@@ -2105,7 +2106,6 @@ async def month_salary_summary(message: types.Message, state: FSMContext):
         text += f"⚠️ Переплата авансами на {int(abs(grand_to_pay))} руб"
 
     await send_long_message(message, text, parse_mode=None)
-
 # ==================== EXCEL ОТЧЁТЫ ====================
 
 @dp.message(F.text == "📥 Отчёт месяц")
