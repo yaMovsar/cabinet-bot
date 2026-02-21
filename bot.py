@@ -365,7 +365,8 @@ def get_manager_keyboard():
         [KeyboardButton(text="📥 Отчёт месяц"),
          KeyboardButton(text="📥 Отчёт работник")],
         [KeyboardButton(text="📂 Справочники")],
-        [KeyboardButton(text="💰 Баланс работников")],
+        [KeyboardButton(text="💳 Выдать аванс"),
+         KeyboardButton(text="💰 Баланс работников")],
         [KeyboardButton(text="🔙 Назад")],
     ]
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
@@ -1687,7 +1688,7 @@ async def admin_entries_back(callback: types.CallbackQuery, state: FSMContext):
 
 # ==================== АВАНСЫ ====================
 
-@dp.message(F.text == "💳 Выдать аванс", AdminFilter())
+@dp.message(F.text == "💳 Выдать аванс", StaffFilter())
 async def advance_start(message: types.Message, state: FSMContext):
     await state.clear()
     workers = await get_all_workers()
@@ -1763,7 +1764,12 @@ async def advance_comment(message: types.Message, state: FSMContext):
         f"💳 Авансы: {int(stats['advances'])} руб\n"
         f"📊 Остаток: {int(stats['balance'])} руб"
     )
-    await message.answer(text, reply_markup=get_money_keyboard())
+
+    # Определяем клавиатуру в зависимости от роли
+    if message.from_user.id == ADMIN_ID:
+        await message.answer(text, reply_markup=get_money_keyboard())
+    else:
+        await message.answer(text, reply_markup=get_manager_keyboard())
 
     # Уведомление работнику (пункт 14)
     try:
@@ -1775,8 +1781,22 @@ async def advance_comment(message: types.Message, state: FSMContext):
     except Exception as e:
         logging.error(f"Notify worker advance: {e}")
 
-    await state.clear()
+    # Уведомление админу если аванс выдал менеджер
+    if message.from_user.id != ADMIN_ID:
+        try:
+            admin_notify = (
+                f"📬 Менеджер выдал аванс!\n\n"
+                f"👤 Менеджер: {message.from_user.full_name}\n"
+                f"👤 Работник: {data['worker_name']}\n"
+                f"💳 Сумма: {int(data['amount'])} руб"
+            )
+            if comment:
+                admin_notify += f"\n💬 {comment}"
+            await bot.send_message(ADMIN_ID, admin_notify)
+        except Exception as e:
+            logging.error(f"Notify admin about advance: {e}")
 
+    await state.clear()
 @dp.message(F.text == "💳 Удалить аванс", AdminFilter())
 async def delete_advance_start(message: types.Message, state: FSMContext):
     await state.clear()
