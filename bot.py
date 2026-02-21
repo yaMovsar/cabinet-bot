@@ -345,53 +345,6 @@ async def send_long_message(target, text, parse_mode="Markdown"):
             await target.answer(part, parse_mode=parse_mode)
 
 
-# ==================== БЭКАП ====================
-
-@dp.message(F.text == "💾 Бэкап БД")
-async def manual_backup(message: types.Message):
-    if not is_admin(message.from_user.id):
-        return
-    await send_backup(message.from_user.id)
-
-
-async def send_backup(chat_id=None):
-    """Отправляет бэкап базы данных"""
-    if chat_id is None:
-        chat_id = ADMIN_ID
-
-    import os as _os
-    db_path = _os.path.join(
-        _os.getenv("RAILWAY_VOLUME_MOUNT_PATH", "."),
-        "production.db"
-    )
-
-    if not _os.path.exists(db_path):
-        try:
-            await bot.send_message(chat_id, "❌ База данных не найдена.")
-        except Exception:
-            pass
-        return
-
-    try:
-        today = date.today()
-        caption = f"💾 Бэкап БД\n📅 {today.strftime('%d.%m.%Y %H:%M')}"
-        await bot.send_document(
-            chat_id,
-            FSInputFile(db_path, filename=f"backup_{today.strftime('%Y%m%d')}.db"),
-            caption=caption
-        )
-    except Exception as e:
-        logging.error(f"Backup error: {e}")
-        try:
-            await bot.send_message(chat_id, f"❌ Ошибка бэкапа: {e}")
-        except Exception:
-            pass
-
-
-async def auto_backup():
-    """Автоматический ежедневный бэкап"""
-    await send_backup(ADMIN_ID)
-
 # ==================== /start ====================
 
 @dp.message(Command("start"))
