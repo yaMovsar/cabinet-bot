@@ -150,7 +150,7 @@ def get_main_keyboard(user_id=None):
 
 
 def get_admin_keyboard():
-    """Главная админ-панель — 4 раздела + отчёты"""
+    """Главная админ-панель"""
     buttons = [
         [KeyboardButton(text="📋 Сводка день"),
          KeyboardButton(text="📋 Сводка месяц")],
@@ -160,6 +160,7 @@ def get_admin_keyboard():
          KeyboardButton(text="✏️ Редактировать")],
         [KeyboardButton(text="🗑 Удалить"),
          KeyboardButton(text="📂 Справочники")],
+        [KeyboardButton(text="💾 Бэкап БД")],
         [KeyboardButton(text="🔙 Назад")],
     ]
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
@@ -343,6 +344,53 @@ async def send_long_message(target, text, parse_mode="Markdown"):
         if part.strip():
             await target.answer(part, parse_mode=parse_mode)
 
+
+# ==================== БЭКАП ====================
+
+@dp.message(F.text == "💾 Бэкап БД")
+async def manual_backup(message: types.Message):
+    if not is_admin(message.from_user.id):
+        return
+    await send_backup(message.from_user.id)
+
+
+async def send_backup(chat_id=None):
+    """Отправляет бэкап базы данных"""
+    if chat_id is None:
+        chat_id = ADMIN_ID
+
+    import os as _os
+    db_path = _os.path.join(
+        _os.getenv("RAILWAY_VOLUME_MOUNT_PATH", "."),
+        "production.db"
+    )
+
+    if not _os.path.exists(db_path):
+        try:
+            await bot.send_message(chat_id, "❌ База данных не найдена.")
+        except Exception:
+            pass
+        return
+
+    try:
+        today = date.today()
+        caption = f"💾 Бэкап БД\n📅 {today.strftime('%d.%m.%Y %H:%M')}"
+        await bot.send_document(
+            chat_id,
+            FSInputFile(db_path, filename=f"backup_{today.strftime('%Y%m%d')}.db"),
+            caption=caption
+        )
+    except Exception as e:
+        logging.error(f"Backup error: {e}")
+        try:
+            await bot.send_message(chat_id, f"❌ Ошибка бэкапа: {e}")
+        except Exception:
+            pass
+
+
+async def auto_backup():
+    """Автоматический ежедневный бэкап"""
+    await send_backup(ADMIN_ID)
 
 # ==================== /start ====================
 
@@ -1981,6 +2029,53 @@ async def send_admin_report():
         logging.error(f"Admin report: {e}")
 
 
+# ==================== БЭКАП ====================
+
+@dp.message(F.text == "💾 Бэкап БД")
+async def manual_backup(message: types.Message):
+    if not is_admin(message.from_user.id):
+        return
+    await send_backup(message.from_user.id)
+
+
+async def send_backup(chat_id=None):
+    """Отправляет бэкап базы данных"""
+    if chat_id is None:
+        chat_id = ADMIN_ID
+
+    import os as _os
+    db_path = _os.path.join(
+        _os.getenv("RAILWAY_VOLUME_MOUNT_PATH", "."),
+        "production.db"
+    )
+
+    if not _os.path.exists(db_path):
+        try:
+            await bot.send_message(chat_id, "❌ База данных не найдена.")
+        except Exception:
+            pass
+        return
+
+    try:
+        today = date.today()
+        caption = f"💾 Бэкап БД\n📅 {today.strftime('%d.%m.%Y %H:%M')}"
+        await bot.send_document(
+            chat_id,
+            FSInputFile(db_path, filename=f"backup_{today.strftime('%Y%m%d')}.db"),
+            caption=caption
+        )
+    except Exception as e:
+        logging.error(f"Backup error: {e}")
+        try:
+            await bot.send_message(chat_id, f"❌ Ошибка бэкапа: {e}")
+        except Exception:
+            pass
+
+
+async def auto_backup():
+    """Автоматический ежедневный бэкап"""
+    await send_backup(ADMIN_ID)
+
 # ==================== ЗАПУСК ====================
 
 async def main():
@@ -1988,6 +2083,7 @@ async def main():
     scheduler.add_job(send_evening_reminder, "cron", hour=18, minute=0)
     scheduler.add_job(send_late_reminder, "cron", hour=20, minute=0)
     scheduler.add_job(send_admin_report, "cron", hour=21, minute=0)
+    scheduler.add_job(auto_backup, "cron", hour=23, minute=0)
     scheduler.start()
     logging.info("Бот запущен!")
     await dp.start_polling(bot)
