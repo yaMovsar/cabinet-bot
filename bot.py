@@ -13,7 +13,7 @@ from aiogram.types import (
 )
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
-from config import BOT_TOKEN, ADMIN_ID, MANAGER_ID
+from config import BOT_TOKEN, ADMIN_ID, MANAGER_IDS
 from database import (
     init_db, add_work, get_daily_total, get_monthly_total,
     get_workers_without_records, get_all_workers_daily_summary,
@@ -49,10 +49,9 @@ MONTHS_RU = ["", "Январь", "Февраль", "Март", "Апрель", "
              "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"]
 
 
-# ==================== УТИЛИТЫ (пункт 3, 4, 5) ====================
+# ==================== УТИЛИТЫ ====================
 
 def format_date(iso_date: str) -> str:
-    """2025-05-25 -> 25.05.2025"""
     try:
         return datetime.strptime(iso_date, "%Y-%m-%d").strftime("%d.%m.%Y")
     except Exception:
@@ -60,7 +59,6 @@ def format_date(iso_date: str) -> str:
 
 
 def format_date_short(iso_date: str) -> str:
-    """2025-05-25 -> 25.05"""
     try:
         return datetime.strptime(iso_date, "%Y-%m-%d").strftime("%d.%m")
     except Exception:
@@ -68,7 +66,6 @@ def format_date_short(iso_date: str) -> str:
 
 
 def parse_user_date(text: str):
-    """25.05.2025 -> date object or None"""
     try:
         parts = text.strip().split(".")
         if len(parts) != 3:
@@ -79,7 +76,6 @@ def parse_user_date(text: str):
 
 
 def make_date_picker(callback_prefix: str, cancel_callback: str = "cancel"):
-    """Универсальный выбор даты (пункт 3)"""
     today = date.today()
     yesterday = today - timedelta(days=1)
     return InlineKeyboardMarkup(inline_keyboard=[
@@ -141,17 +137,16 @@ async def send_long_message(target, text, parse_mode=None):
                 await target.answer(part, parse_mode=None)
 
 
-# ==================== MIDDLEWARE (пункт 2) ====================
+# ==================== MIDDLEWARE ====================
 
 class RoleMiddleware(BaseMiddleware):
-    """Добавляет роли в data каждого хэндлера"""
     async def __call__(self, handler, event: TelegramObject, data: dict):
         user = data.get("event_from_user")
         if user:
             uid = user.id
             data["is_admin"] = uid == ADMIN_ID
-            data["is_manager"] = uid == MANAGER_ID
-            data["is_staff"] = uid in (ADMIN_ID, MANAGER_ID)
+            data["is_manager"] = uid in MANAGER_IDS
+            data["is_staff"] = uid == ADMIN_ID or uid in MANAGER_IDS
         else:
             data["is_admin"] = False
             data["is_manager"] = False
@@ -162,7 +157,7 @@ dp.message.middleware(RoleMiddleware())
 dp.callback_query.middleware(RoleMiddleware())
 
 
-# ==================== ФИЛЬТРЫ (пункт 2) ====================
+# ==================== ФИЛЬТРЫ ====================
 
 class AdminFilter(Filter):
     async def __call__(self, message: types.Message) -> bool:
@@ -171,14 +166,13 @@ class AdminFilter(Filter):
 
 class StaffFilter(Filter):
     async def __call__(self, message: types.Message) -> bool:
-        return message.from_user.id in (ADMIN_ID, MANAGER_ID)
+        return message.from_user.id == ADMIN_ID or message.from_user.id in MANAGER_IDS
 
 
-# ==================== ГЛОБАЛЬНЫЙ ERROR HANDLER (пункт 19) ====================
+# ==================== ERROR HANDLER ====================
 
 @dp.error()
 async def global_error_handler(event: types.ErrorEvent):
-    # Игнорируем ошибку "сообщение не изменилось"
     if "message is not modified" in str(event.exception):
         return True
 
@@ -280,7 +274,7 @@ class AdminReminderSettings(StatesGroup):
     entering_time = State()
 
 
-# ==================== КЛАВИАТУРЫ (пункт 5) ====================
+# ==================== КЛАВИАТУРЫ ====================
 
 def get_main_keyboard(user_id=None):
     buttons = [
@@ -292,7 +286,7 @@ def get_main_keyboard(user_id=None):
     ]
     if user_id and user_id == ADMIN_ID:
         buttons.append([KeyboardButton(text="👑 Админ-панель")])
-    elif user_id and user_id == MANAGER_ID:
+    elif user_id and user_id in MANAGER_IDS:
         buttons.append([KeyboardButton(text="📊 Панель отчётов")])
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
 
@@ -398,7 +392,7 @@ async def cmd_start(message: types.Message, state: FSMContext, is_admin: bool, i
         await add_worker(uid, message.from_user.full_name)
         text = (
             f"Привет, {message.from_user.first_name}! 👋\n"
-            "Вы — менеджер. Доступен просмотр отчётов."
+            "Вы — менеджер. Доступен просмотр отчётов и выдача авансов."
         )
     else:
         exists = await worker_exists(uid)
@@ -666,7 +660,6 @@ async def save_work_entry(message, state, qty, user=None):
     daily = await get_daily_total(user.id, work_date)
     day_total = sum(r[3] for r in daily)
 
-    # Кнопка «Записать ещё» (пункт 12)
     buttons = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="📝 Записать ещё", callback_data="write_more")],
     ])
@@ -691,16 +684,15 @@ async def save_work_entry(message, state, qty, user=None):
             await bot.send_message(ADMIN_ID, notify_text)
         except Exception as e:
             logging.error(f"Notify admin: {e}")
-        if MANAGER_ID:
+        for mgr_id in MANAGER_IDS:
             try:
-                await bot.send_message(MANAGER_ID, notify_text)
+                await bot.send_message(mgr_id, notify_text)
             except Exception as e:
-                logging.error(f"Notify manager: {e}")
+                logging.error(f"Notify manager {mgr_id}: {e}")
 
     await state.clear()
 
 
-# Кнопка «Записать ещё» (пункт 12)
 @dp.callback_query(F.data == "write_more")
 async def write_more(callback: types.CallbackQuery, state: FSMContext):
     await state.clear()
@@ -724,7 +716,7 @@ async def cancel_action(callback: types.CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
-# ==================== МОЙ БАЛАНС (пункт 13) ====================
+# ==================== МОЙ БАЛАНС ====================
 
 @dp.message(F.text == "💳 Мой баланс")
 async def my_balance(message: types.Message, state: FSMContext):
@@ -1006,7 +998,7 @@ async def back_to_admin(message: types.Message, state: FSMContext):
     await state.clear()
     if message.from_user.id == ADMIN_ID:
         await message.answer("👑 Админ-панель", reply_markup=get_admin_keyboard())
-    elif message.from_user.id == MANAGER_ID:
+    elif message.from_user.id in MANAGER_IDS:
         await message.answer("📊 Панель отчётов", reply_markup=get_manager_keyboard())
 
 @dp.message(F.text == "🔙 Назад")
@@ -1769,13 +1761,12 @@ async def advance_comment(message: types.Message, state: FSMContext):
         f"📊 Остаток: {int(stats['balance'])} руб"
     )
 
-    # Определяем клавиатуру в зависимости от роли
     if message.from_user.id == ADMIN_ID:
         await message.answer(text, reply_markup=get_money_keyboard())
     else:
         await message.answer(text, reply_markup=get_manager_keyboard())
 
-    # Уведомление работнику (пункт 14)
+    # Уведомление работнику
     try:
         notify = f"💳 Вам выдан аванс: {int(data['amount'])} руб"
         if comment:
@@ -1801,6 +1792,7 @@ async def advance_comment(message: types.Message, state: FSMContext):
             logging.error(f"Notify admin about advance: {e}")
 
     await state.clear()
+
 @dp.message(F.text == "💳 Удалить аванс", AdminFilter())
 async def delete_advance_start(message: types.Message, state: FSMContext):
     await state.clear()
@@ -1878,7 +1870,7 @@ async def del_advance_confirm(callback: types.CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
-# ==================== БАЛАНС (пункт 7 — оптимизированный) ====================
+# ==================== БАЛАНС ====================
 
 @dp.message(F.text == "💰 Баланс работников", StaffFilter())
 async def show_balances(message: types.Message, state: FSMContext):
@@ -1944,7 +1936,7 @@ async def earnings_month(message: types.Message, state: FSMContext):
     await send_long_message(message, text)
 
 
-# ==================== РЕЙТИНГ (пункт 7 — оптимизированный) ====================
+# ==================== РЕЙТИНГ ====================
 
 @dp.message(F.text == "🏆 Рейтинг работников", AdminFilter())
 async def workers_rating(message: types.Message, state: FSMContext):
@@ -1998,7 +1990,7 @@ async def workers_rating(message: types.Message, state: FSMContext):
     await send_long_message(message, text)
 
 
-# ==================== ИТОГИ МЕСЯЦА (пункт 7 — оптимизированный) ====================
+# ==================== ИТОГИ МЕСЯЦА ====================
 
 @dp.message(F.text == "💼 Итоги месяца", AdminFilter())
 async def month_salary_summary(message: types.Message, state: FSMContext):
@@ -2061,7 +2053,7 @@ async def month_salary_summary(message: types.Message, state: FSMContext):
     await send_long_message(message, text)
 
 
-# ==================== EXCEL ОТЧЁТЫ (пункт 21 — async) ====================
+# ==================== EXCEL ОТЧЁТЫ ====================
 
 @dp.message(F.text == "📥 Отчёт месяц", StaffFilter())
 async def report_month(message: types.Message, state: FSMContext):
@@ -2105,7 +2097,7 @@ async def report_worker_gen(callback: types.CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
-# ==================== НАСТРОЙКА НАПОМИНАНИЙ (пункт 24) ====================
+# ==================== НАСТРОЙКА НАПОМИНАНИЙ ====================
 
 @dp.message(F.text == "⏰ Напоминания", AdminFilter())
 async def reminder_settings_menu(message: types.Message, state: FSMContext):
@@ -2118,9 +2110,10 @@ async def reminder_settings_menu(message: types.Message, state: FSMContext):
 
     text = (
         "⏰ Настройка напоминаний\n\n"
-        f"{ev_status} Вечернее напоминание: {settings['evening_hour']:02d}:{settings['evening_minute']:02d}\n"
-        f"{lt_status} Позднее напоминание: {settings['late_hour']:02d}:{settings['late_minute']:02d}\n"
+        f"{ev_status} Вечернее: {settings['evening_hour']:02d}:{settings['evening_minute']:02d}\n"
+        f"{lt_status} Позднее: {settings['late_hour']:02d}:{settings['late_minute']:02d}\n"
         f"{rp_status} Отчёт админу: {settings['report_hour']:02d}:{settings['report_minute']:02d}\n"
+        f"\nОбновлено: {datetime.now().strftime('%H:%M:%S')}"
     )
 
     buttons = [
@@ -2187,10 +2180,11 @@ async def reminder_action(callback: types.CallbackQuery, state: FSMContext):
     rp_status = "✅" if settings['report_enabled'] else "❌"
 
     text = (
-        "⏰ Настройка напоминаний\n\n"
-        f"{ev_status} Вечернее напоминание: {settings['evening_hour']:02d}:{settings['evening_minute']:02d}\n"
-        f"{lt_status} Позднее напоминание: {settings['late_hour']:02d}:{settings['late_minute']:02d}\n"
+        f"⏰ Настройка напоминаний\n\n"
+        f"{ev_status} Вечернее: {settings['evening_hour']:02d}:{settings['evening_minute']:02d}\n"
+        f"{lt_status} Позднее: {settings['late_hour']:02d}:{settings['late_minute']:02d}\n"
         f"{rp_status} Отчёт админу: {settings['report_hour']:02d}:{settings['report_minute']:02d}\n"
+        f"\nОбновлено: {datetime.now().strftime('%H:%M:%S')}"
     )
 
     buttons = [
@@ -2212,7 +2206,11 @@ async def reminder_action(callback: types.CallbackQuery, state: FSMContext):
         [InlineKeyboardButton(text="🔄 Применить", callback_data="rem:apply")],
         [InlineKeyboardButton(text="🔙 Назад", callback_data="rem:back")],
     ]
-    await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+
+    try:
+        await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+    except Exception:
+        pass
 
 
 @dp.message(AdminReminderSettings.entering_time)
@@ -2246,10 +2244,8 @@ async def reminder_time_entered(message: types.Message, state: FSMContext):
 
 
 async def reschedule_reminders():
-    """Перестраивает расписание по текущим настройкам"""
     settings = await get_reminder_settings()
 
-    # Удаляем старые задачи
     for job_id in ['evening_reminder', 'late_reminder', 'admin_report', 'auto_backup']:
         try:
             scheduler.remove_job(job_id)
@@ -2342,7 +2338,7 @@ async def send_backup(chat_id=None):
             pass
 
 
-# ==================== НАПОМИНАНИЯ (пункт 20 — safe wrappers) ====================
+# ==================== НАПОМИНАНИЯ ====================
 
 async def send_evening_reminder():
     settings = await get_reminder_settings()
@@ -2381,7 +2377,6 @@ async def send_admin_report():
     except Exception as e:
         logging.error(f"Admin report: {e}")
 
-# Обёртки с try/except (пункт 20)
 async def safe_evening_reminder():
     try:
         await send_evening_reminder()
@@ -2428,7 +2423,6 @@ async def safe_backup():
 async def main():
     await init_db()
 
-    # Загружаем настройки и ставим расписание
     settings = await get_reminder_settings()
 
     if settings['evening_enabled']:
