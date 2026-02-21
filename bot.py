@@ -367,12 +367,7 @@ async def custom_date_entered(message: types.Message, state: FSMContext):
     if len(worker_cats) == 1:
         cat_code = worker_cats[0][0]
         cat_items = [i for i in items if i[3] == cat_code]
-        buttons = []
-        for code, name, price, cat in cat_items:
-            buttons.append([InlineKeyboardButton(
-                text=f"{name} — {int(price)} ₽",
-                callback_data=f"work:{code}"
-            )])
+        buttons = make_work_buttons(cat_items)
         buttons.append([InlineKeyboardButton(text="🔙 К датам", callback_data="wdate_back")])
         buttons.append([InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")])
         await message.answer(
@@ -401,7 +396,6 @@ async def custom_date_entered(message: types.Message, state: FSMContext):
         )
         await state.set_state(WorkEntry.choosing_category)
 
-
 async def show_category_or_work(callback, state, chosen_date):
     items = get_price_list_for_worker(callback.from_user.id)
     worker_cats = get_worker_categories(callback.from_user.id)
@@ -411,12 +405,7 @@ async def show_category_or_work(callback, state, chosen_date):
     if len(worker_cats) == 1:
         cat_code = worker_cats[0][0]
         cat_items = [i for i in items if i[3] == cat_code]
-        buttons = []
-        for code, name, price, cat in cat_items:
-            buttons.append([InlineKeyboardButton(
-                text=f"{name} — {int(price)} ₽",
-                callback_data=f"work:{code}"
-            )])
+        buttons = make_work_buttons(cat_items)
         buttons.append([InlineKeyboardButton(text="🔙 К датам", callback_data="wdate_back")])
         buttons.append([InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")])
         await callback.message.edit_text(
@@ -486,12 +475,7 @@ async def work_category_chosen(callback: types.CallbackQuery, state: FSMContext)
     data = await state.get_data()
     d = data["work_date"].split("-")
     date_str = f"{d[2]}.{d[1]}.{d[0]}"
-    buttons = []
-    for code, name, price, cat in cat_items:
-        buttons.append([InlineKeyboardButton(
-            text=f"{name} — {int(price)} ₽",
-            callback_data=f"work:{code}"
-        )])
+    buttons = make_work_buttons(cat_items)
     buttons.append([InlineKeyboardButton(text="🔙 К категориям", callback_data="wcat_back")])
     buttons.append([InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")])
     await callback.message.edit_text(
@@ -503,7 +487,6 @@ async def work_category_chosen(callback: types.CallbackQuery, state: FSMContext)
     )
     await state.set_state(WorkEntry.choosing_work)
     await callback.answer()
-
 
 @dp.callback_query(F.data == "wcat_back", WorkEntry.choosing_work)
 async def work_back_to_categories(callback: types.CallbackQuery, state: FSMContext):
