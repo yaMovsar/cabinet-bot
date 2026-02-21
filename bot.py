@@ -178,6 +178,10 @@ class StaffFilter(Filter):
 
 @dp.error()
 async def global_error_handler(event: types.ErrorEvent):
+    # Игнорируем ошибку "сообщение не изменилось"
+    if "message is not modified" in str(event.exception):
+        return True
+
     logging.exception(f"Ошибка: {event.exception}")
     try:
         error_text = f"🚨 Ошибка бота:\n\n{type(event.exception).__name__}: {str(event.exception)[:500]}"
