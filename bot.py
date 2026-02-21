@@ -208,6 +208,7 @@ def get_money_keyboard():
         [KeyboardButton(text="💰 Баланс работников")],
         [KeyboardButton(text="📊 Заработок за месяц")],
         [KeyboardButton(text="🏆 Рейтинг работников")],
+        [KeyboardButton(text="💼 Итоги месяца")],
         [KeyboardButton(text="🔙 В админ-панель")],
     ]
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
@@ -2022,6 +2023,88 @@ async def workers_rating(message: types.Message, state: FSMContext):
 
     await send_long_message(message, text, parse_mode=None)
 
+
+# ==================== ИТОГИ МЕСЯЦА ====================
+
+@dp.message(F.text == "💼 Итоги месяца")
+async def month_salary_summary(message: types.Message, state: FSMContext):
+    if not is_admin(message.from_user.id):
+        return
+    await state.clear()
+    today = date.today()
+    MONTHS = ["", "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
+              "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"]
+
+    workers = get_all_workers()
+
+    text = f"💼 ИТОГИ МЕСЯЦА — {MONTHS[today.month]} {today.year}\n"
+    text += f"━━━━━━━━━━━━━━━━━━━\n\n"
+
+    grand_earned = 0
+    grand_advance = 0
+    grand_to_pay = 0
+    worker_list = []
+
+    for tid, name in workers:
+        earned = 0
+        monthly = get_monthly_total(tid, today.year, today.month)
+        for _, _, _, sub in monthly:
+            earned += sub
+
+        adv_total = get_worker_advances_total(tid, today.year, today.month)
+        to_pay = earned - adv_total
+
+        days_data = get_monthly_by_days(tid, today.year, today.month)
+        work_days = len(set(row[0] for row in days_data))
+
+        if earned > 0 or adv_total > 0:
+            worker_list.append({
+                'name': name,
+                'earned': earned,
+                'advance': adv_total,
+                'to_pay': to_pay,
+                'days': work_days
+            })
+            grand_earned += earned
+            grand_advance += adv_total
+            grand_to_pay += to_pay
+
+    if not worker_list:
+        await message.answer("📭 Нет данных за этот месяц.")
+        return
+
+    # Сортировка по заработку
+    worker_list.sort(key=lambda x: x['earned'], reverse=True)
+
+    for w in worker_list:
+        if w['to_pay'] > 0:
+            icon = "💰"
+        elif w['to_pay'] == 0:
+            icon = "✅"
+        else:
+            icon = "⚠️"
+
+        text += f"{icon} {w['name']}\n"
+        text += f"   📅 Рабочих дней: {w['days']}\n"
+        text += f"   💰 Заработано: {int(w['earned'])} руб\n"
+        text += f"   💳 Авансы: {int(w['advance'])} руб\n"
+        text += f"   📊 К выплате: {int(w['to_pay'])} руб\n\n"
+
+    text += f"━━━━━━━━━━━━━━━━━━━\n"
+    text += f"💰 Всего заработано: {int(grand_earned)} руб\n"
+    text += f"💳 Всего авансов: {int(grand_advance)} руб\n"
+    text += f"━━━━━━━━━━━━━━━━━━━\n"
+    text += f"💼 ИТОГО К ВЫПЛАТЕ: {int(grand_to_pay)} руб\n"
+    text += f"━━━━━━━━━━━━━━━━━━━\n\n"
+
+    if grand_to_pay > 0:
+        text += f"💡 Нужно подготовить {int(grand_to_pay)} руб для выдачи зарплат"
+    elif grand_to_pay == 0:
+        text += f"✅ Все зарплаты выплачены!"
+    else:
+        text += f"⚠️ Переплата авансами на {int(abs(grand_to_pay))} руб"
+
+    await send_long_message(message, text, parse_mode=None)
 
 # ==================== EXCEL ОТЧЁТЫ ====================
 
