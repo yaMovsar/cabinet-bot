@@ -4,64 +4,10 @@ from datetime import date
 DB_NAME = "production.db"
 
 
-def init_db():
-    conn = sqlite3.connect(DB_NAME)
-    c = conn.cursor()
+def _connect():
+    """Возвращает подключение к базе данных."""
+    return sqlite3.connect(DB_NAME)
 
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS workers (
-            telegram_id INTEGER PRIMARY KEY,
-            name TEXT NOT NULL,
-            registered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
-
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS categories (
-            code TEXT PRIMARY KEY,
-            name TEXT NOT NULL,
-            emoji TEXT DEFAULT '📦'
-        )
-    """)
-
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS price_list (
-            code TEXT PRIMARY KEY,
-            name TEXT NOT NULL,
-            price REAL NOT NULL,
-            category_code TEXT NOT NULL,
-            is_active BOOLEAN DEFAULT 1,
-            FOREIGN KEY (category_code) REFERENCES categories(code)
-        )
-    """)
-
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS worker_categories (
-            worker_id INTEGER NOT NULL,
-            category_code TEXT NOT NULL,
-            PRIMARY KEY (worker_id, category_code),
-            FOREIGN KEY (worker_id) REFERENCES workers(telegram_id),
-            FOREIGN KEY (category_code) REFERENCES categories(code)
-        )
-    """)
-
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS work_log (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            worker_id INTEGER NOT NULL,
-            work_code TEXT NOT NULL,
-            quantity INTEGER NOT NULL,
-            price_per_unit REAL NOT NULL,
-            total REAL NOT NULL,
-            work_date DATE NOT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (worker_id) REFERENCES workers(telegram_id),
-            FOREIGN KEY (work_code) REFERENCES price_list(code)
-        )
-    """)
-
-    conn.commit()
-    conn.close()
 
 def init_db():
     conn = _connect()
@@ -134,10 +80,11 @@ def init_db():
     conn.commit()
     conn.close()
 
+
 # ==================== КАТЕГОРИИ ====================
 
 def add_category(code, name, emoji="📦"):
-    conn = sqlite3.connect(DB_NAME)
+    conn = _connect()
     conn.execute("INSERT OR REPLACE INTO categories (code, name, emoji) VALUES (?, ?, ?)",
                  (code, name, emoji))
     conn.commit()
@@ -145,14 +92,14 @@ def add_category(code, name, emoji="📦"):
 
 
 def get_categories():
-    conn = sqlite3.connect(DB_NAME)
+    conn = _connect()
     rows = conn.execute("SELECT code, name, emoji FROM categories ORDER BY name").fetchall()
     conn.close()
     return rows
 
 
 def delete_category(code):
-    conn = sqlite3.connect(DB_NAME)
+    conn = _connect()
     conn.execute("DELETE FROM worker_categories WHERE category_code = ?", (code,))
     conn.execute("UPDATE price_list SET is_active = 0 WHERE category_code = ?", (code,))
     conn.execute("DELETE FROM categories WHERE code = ?", (code,))
@@ -163,7 +110,7 @@ def delete_category(code):
 # ==================== РАБОТНИКИ ====================
 
 def add_worker(telegram_id, name):
-    conn = sqlite3.connect(DB_NAME)
+    conn = _connect()
     conn.execute("INSERT OR REPLACE INTO workers (telegram_id, name) VALUES (?, ?)",
                  (telegram_id, name))
     conn.commit()
@@ -171,14 +118,14 @@ def add_worker(telegram_id, name):
 
 
 def get_all_workers():
-    conn = sqlite3.connect(DB_NAME)
+    conn = _connect()
     rows = conn.execute("SELECT telegram_id, name FROM workers ORDER BY name").fetchall()
     conn.close()
     return rows
 
 
 def delete_worker(telegram_id):
-    conn = sqlite3.connect(DB_NAME)
+    conn = _connect()
     conn.execute("DELETE FROM worker_categories WHERE worker_id = ?", (telegram_id,))
     conn.execute("DELETE FROM workers WHERE telegram_id = ?", (telegram_id,))
     conn.commit()
@@ -188,7 +135,7 @@ def delete_worker(telegram_id):
 # ==================== СВЯЗЬ РАБОТНИК-КАТЕГОРИЯ ====================
 
 def assign_category_to_worker(worker_id, category_code):
-    conn = sqlite3.connect(DB_NAME)
+    conn = _connect()
     conn.execute("INSERT OR IGNORE INTO worker_categories (worker_id, category_code) VALUES (?, ?)",
                  (worker_id, category_code))
     conn.commit()
@@ -196,7 +143,7 @@ def assign_category_to_worker(worker_id, category_code):
 
 
 def remove_category_from_worker(worker_id, category_code):
-    conn = sqlite3.connect(DB_NAME)
+    conn = _connect()
     conn.execute("DELETE FROM worker_categories WHERE worker_id = ? AND category_code = ?",
                  (worker_id, category_code))
     conn.commit()
@@ -204,7 +151,7 @@ def remove_category_from_worker(worker_id, category_code):
 
 
 def get_worker_categories(worker_id):
-    conn = sqlite3.connect(DB_NAME)
+    conn = _connect()
     rows = conn.execute("""
         SELECT c.code, c.name, c.emoji
         FROM worker_categories wc
@@ -217,7 +164,7 @@ def get_worker_categories(worker_id):
 
 
 def get_workers_in_category(category_code):
-    conn = sqlite3.connect(DB_NAME)
+    conn = _connect()
     rows = conn.execute("""
         SELECT w.telegram_id, w.name
         FROM worker_categories wc
@@ -232,7 +179,7 @@ def get_workers_in_category(category_code):
 # ==================== ПРАЙС-ЛИСТ ====================
 
 def add_price_item(code, name, price, category_code):
-    conn = sqlite3.connect(DB_NAME)
+    conn = _connect()
     conn.execute("""
         INSERT OR REPLACE INTO price_list (code, name, price, category_code, is_active)
         VALUES (?, ?, ?, ?, 1)
@@ -242,7 +189,7 @@ def add_price_item(code, name, price, category_code):
 
 
 def get_price_list():
-    conn = sqlite3.connect(DB_NAME)
+    conn = _connect()
     rows = conn.execute("""
         SELECT pl.code, pl.name, pl.price, pl.category_code, c.name, c.emoji
         FROM price_list pl
@@ -255,7 +202,7 @@ def get_price_list():
 
 
 def get_price_list_for_worker(worker_id):
-    conn = sqlite3.connect(DB_NAME)
+    conn = _connect()
     rows = conn.execute("""
         SELECT pl.code, pl.name, pl.price, pl.category_code
         FROM price_list pl
@@ -268,14 +215,14 @@ def get_price_list_for_worker(worker_id):
 
 
 def update_price(code, new_price):
-    conn = sqlite3.connect(DB_NAME)
+    conn = _connect()
     conn.execute("UPDATE price_list SET price = ? WHERE code = ?", (new_price, code))
     conn.commit()
     conn.close()
 
 
 def delete_price_item_permanently(code):
-    conn = sqlite3.connect(DB_NAME)
+    conn = _connect()
     c = conn.cursor()
     count = c.execute("SELECT COUNT(*) FROM work_log WHERE work_code = ?", (code,)).fetchone()[0]
     if count > 0:
@@ -296,7 +243,7 @@ def add_work(worker_id, work_code, quantity, price, work_date=None):
     if work_date is None:
         work_date = date.today()
     total = quantity * price
-    conn = sqlite3.connect(DB_NAME)
+    conn = _connect()
     conn.execute("""
         INSERT INTO work_log (worker_id, work_code, quantity, price_per_unit, total, work_date)
         VALUES (?, ?, ?, ?, ?, ?)
@@ -307,7 +254,7 @@ def add_work(worker_id, work_code, quantity, price, work_date=None):
 
 
 def delete_last_entry(worker_id):
-    conn = sqlite3.connect(DB_NAME)
+    conn = _connect()
     conn.execute("""
         DELETE FROM work_log WHERE id = (
             SELECT id FROM work_log WHERE worker_id = ?
@@ -323,7 +270,7 @@ def delete_last_entry(worker_id):
 def get_daily_total(worker_id, target_date=None):
     if target_date is None:
         target_date = date.today()
-    conn = sqlite3.connect(DB_NAME)
+    conn = _connect()
     rows = conn.execute("""
         SELECT work_code, SUM(quantity), price_per_unit, SUM(total)
         FROM work_log
@@ -339,7 +286,7 @@ def get_monthly_total(worker_id, year=None, month=None):
         year = date.today().year
     if month is None:
         month = date.today().month
-    conn = sqlite3.connect(DB_NAME)
+    conn = _connect()
     rows = conn.execute("""
         SELECT work_code, SUM(quantity), price_per_unit, SUM(total)
         FROM work_log
@@ -355,7 +302,7 @@ def get_monthly_total(worker_id, year=None, month=None):
 def get_all_workers_daily_summary(target_date=None):
     if target_date is None:
         target_date = date.today()
-    conn = sqlite3.connect(DB_NAME)
+    conn = _connect()
     rows = conn.execute("""
         SELECT w.telegram_id, w.name, COALESCE(SUM(wl.total), 0)
         FROM workers w
@@ -372,7 +319,7 @@ def get_all_workers_monthly_summary(year=None, month=None):
         year = date.today().year
     if month is None:
         month = date.today().month
-    conn = sqlite3.connect(DB_NAME)
+    conn = _connect()
     rows = conn.execute("""
         SELECT w.telegram_id, w.name, COALESCE(SUM(wl.total), 0)
         FROM workers w
@@ -389,7 +336,7 @@ def get_all_workers_monthly_summary(year=None, month=None):
 def get_workers_without_records(target_date=None):
     if target_date is None:
         target_date = date.today()
-    conn = sqlite3.connect(DB_NAME)
+    conn = _connect()
     all_workers = conn.execute("SELECT telegram_id, name FROM workers").fetchall()
     with_records = {r[0] for r in conn.execute(
         "SELECT DISTINCT worker_id FROM work_log WHERE work_date = ?",
@@ -403,7 +350,7 @@ def get_monthly_by_days(worker_id, year=None, month=None):
         year = date.today().year
     if month is None:
         month = date.today().month
-    conn = sqlite3.connect(DB_NAME)
+    conn = _connect()
     rows = conn.execute("""
         SELECT wl.work_date, pl.name, SUM(wl.quantity),
                wl.price_per_unit, SUM(wl.total)
@@ -420,7 +367,7 @@ def get_monthly_by_days(worker_id, year=None, month=None):
 
 
 def get_today_entries(worker_id):
-    conn = sqlite3.connect(DB_NAME)
+    conn = _connect()
     rows = conn.execute("""
         SELECT wl.id, pl.name, wl.quantity, wl.price_per_unit, wl.total, wl.created_at
         FROM work_log wl
@@ -433,7 +380,7 @@ def get_today_entries(worker_id):
 
 
 def get_worker_entries_by_date(worker_id, target_date):
-    conn = sqlite3.connect(DB_NAME)
+    conn = _connect()
     rows = conn.execute("""
         SELECT wl.id, pl.name, wl.quantity, wl.price_per_unit, wl.total,
                wl.work_date, wl.created_at
@@ -447,7 +394,7 @@ def get_worker_entries_by_date(worker_id, target_date):
 
 
 def get_worker_recent_entries(worker_id, limit=20):
-    conn = sqlite3.connect(DB_NAME)
+    conn = _connect()
     rows = conn.execute("""
         SELECT wl.id, pl.name, wl.quantity, wl.price_per_unit, wl.total,
                wl.work_date, wl.created_at
@@ -462,7 +409,7 @@ def get_worker_recent_entries(worker_id, limit=20):
 
 
 def delete_entry_by_id(entry_id):
-    conn = sqlite3.connect(DB_NAME)
+    conn = _connect()
     entry = conn.execute("""
         SELECT wl.id, pl.name, wl.quantity, wl.total, wl.work_date, w.name
         FROM work_log wl
@@ -478,7 +425,7 @@ def delete_entry_by_id(entry_id):
 
 
 def update_entry_quantity(entry_id, new_quantity):
-    conn = sqlite3.connect(DB_NAME)
+    conn = _connect()
     c = conn.cursor()
     entry = c.execute("SELECT price_per_unit FROM work_log WHERE id = ?", (entry_id,)).fetchone()
     if entry:
@@ -491,7 +438,7 @@ def update_entry_quantity(entry_id, new_quantity):
 
 
 def get_entry_by_id(entry_id):
-    conn = sqlite3.connect(DB_NAME)
+    conn = _connect()
     entry = conn.execute("""
         SELECT wl.id, pl.name, wl.quantity, wl.price_per_unit, wl.total,
                wl.work_date, wl.worker_id, w.name
@@ -509,7 +456,7 @@ def get_worker_monthly_details(worker_id, year=None, month=None):
         year = date.today().year
     if month is None:
         month = date.today().month
-    conn = sqlite3.connect(DB_NAME)
+    conn = _connect()
     rows = conn.execute("""
         SELECT pl.name, c.emoji, c.name, SUM(wl.quantity),
                wl.price_per_unit, SUM(wl.total)
@@ -531,7 +478,7 @@ def get_all_workers_monthly_details(year=None, month=None):
         year = date.today().year
     if month is None:
         month = date.today().month
-    conn = sqlite3.connect(DB_NAME)
+    conn = _connect()
     rows = conn.execute("""
         SELECT w.telegram_id, w.name,
                pl.name, c.emoji, c.name,
@@ -556,7 +503,7 @@ def get_admin_monthly_detailed_all(year=None, month=None):
         year = date.today().year
     if month is None:
         month = date.today().month
-    conn = sqlite3.connect(DB_NAME)
+    conn = _connect()
     rows = conn.execute("""
         SELECT
             w.telegram_id,
@@ -578,6 +525,7 @@ def get_admin_monthly_detailed_all(year=None, month=None):
     """, (str(year), f"{month:02d}")).fetchall()
     conn.close()
     return rows
+
 
 # ==================== АВАНСЫ ====================
 
