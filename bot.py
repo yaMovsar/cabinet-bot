@@ -55,6 +55,7 @@ def is_staff(uid):
 # ==================== СОСТОЯНИЯ ====================
 
 class WorkEntry(StatesGroup):
+    choosing_date = State()        # НОВОЕ
     choosing_category = State()
     choosing_work = State()
     entering_quantity = State()
@@ -263,7 +264,56 @@ async def start_work_entry(message: types.Message, state: FSMContext):
         await message.answer("⚠️ Вам не назначены категории.")
         return
 
-    worker_cats = get_worker_categories(message.from_user.id)
+    from datetime import timedelta
+    today = date.today()
+    buttons = [
+        [InlineKeyboardButton(
+            text=f"📅 Сегодня ({today.strftime('%d.%m')})",
+            callback_data=f"wdate:{today.isoformat()}"
+        )],
+        [InlineKeyboardButton(
+            text=f"📅 Вчера ({(today - timedelta(days=1)).strftime('%d.%m')})",
+            callback_data=f"wdate:{(today - timedelta(days=1)).isoformat()}"
+        )],
+        [InlineKeyboardButton(
+            text=f"📅 Позавчера ({(today - timedelta(days=2)).strftime('%d.%m')})",
+            callback_data=f"wdate:{(today - timedelta(days=2)).isoformat()}"
+        )],
+        [InlineKeyboardButton(
+            text=f"📅 {(today - timedelta(days=3)).strftime('%d.%m')}",
+            callback_data=f"wdate:{(today - timedelta(days=3)).isoformat()}"
+        )],
+        [InlineKeyboardButton(
+            text=f"📅 {(today - timedelta(days=4)).strftime('%d.%m')}",
+            callback_data=f"wdate:{(today - timedelta(days=4)).isoformat()}"
+        )],
+        [InlineKeyboardButton(
+            text=f"📅 {(today - timedelta(days=5)).strftime('%d.%m')}",
+            callback_data=f"wdate:{(today - timedelta(days=5)).isoformat()}"
+        )],
+        [InlineKeyboardButton(
+            text=f"📅 {(today - timedelta(days=6)).strftime('%d.%m')}",
+            callback_data=f"wdate:{(today - timedelta(days=6)).isoformat()}"
+        )],
+        [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")]
+    ]
+    await message.answer(
+        "📅 За какой день записать работу?",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
+    )
+    await state.set_state(WorkEntry.choosing_date)
+
+
+@dp.callback_query(F.data.startswith("wdate:"), WorkEntry.choosing_date)
+async def work_date_chosen(callback: types.CallbackQuery, state: FSMContext):
+    chosen_date = callback.data.split(":")[1]
+    await state.update_data(work_date=chosen_date)
+
+    d = chosen_date.split("-")
+    date_str = f"{d[2]}.{d[1]}.{d[0]}"
+
+    items = get_price_list_for_worker(callback.from_user.id)
+    worker_cats = get_worker_categories(callback.from_user.id)
 
     if len(worker_cats) == 1:
         cat_code = worker_cats[0][0]
@@ -274,9 +324,12 @@ async def start_work_entry(message: types.Message, state: FSMContext):
                 text=f"{name} — {int(price)} ₽",
                 callback_data=f"work:{code}"
             )])
+        buttons.append([InlineKeyboardButton(text="🔙 К датам", callback_data="wdate_back")])
         buttons.append([InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")])
-        await message.answer(
-            f"📋 {worker_cats[0][2]} **{worker_cats[0][1]}**\n\nВыберите работу:",
+        await callback.message.edit_text(
+            f"📅 **Дата: {date_str}**\n"
+            f"📋 {worker_cats[0][2]} **{worker_cats[0][1]}**\n\n"
+            f"Выберите работу:",
             parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
         )
@@ -289,12 +342,59 @@ async def start_work_entry(message: types.Message, state: FSMContext):
                 text=f"{cat_emoji} {cat_name} ({count})",
                 callback_data=f"wcat:{cat_code}"
             )])
+        buttons.append([InlineKeyboardButton(text="🔙 К датам", callback_data="wdate_back")])
         buttons.append([InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")])
-        await message.answer(
-            "📂 Выберите категорию работ:",
+        await callback.message.edit_text(
+            f"📅 **Дата: {date_str}**\n\n"
+            f"📂 Выберите категорию работ:",
+            parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
         )
         await state.set_state(WorkEntry.choosing_category)
+    await callback.answer()
+
+
+@dp.callback_query(F.data == "wdate_back")
+async def work_back_to_dates(callback: types.CallbackQuery, state: FSMContext):
+    from datetime import timedelta
+    today = date.today()
+    buttons = [
+        [InlineKeyboardButton(
+            text=f"📅 Сегодня ({today.strftime('%d.%m')})",
+            callback_data=f"wdate:{today.isoformat()}"
+        )],
+        [InlineKeyboardButton(
+            text=f"📅 Вчера ({(today - timedelta(days=1)).strftime('%d.%m')})",
+            callback_data=f"wdate:{(today - timedelta(days=1)).isoformat()}"
+        )],
+        [InlineKeyboardButton(
+            text=f"📅 Позавчера ({(today - timedelta(days=2)).strftime('%d.%m')})",
+            callback_data=f"wdate:{(today - timedelta(days=2)).isoformat()}"
+        )],
+        [InlineKeyboardButton(
+            text=f"📅 {(today - timedelta(days=3)).strftime('%d.%m')}",
+            callback_data=f"wdate:{(today - timedelta(days=3)).isoformat()}"
+        )],
+        [InlineKeyboardButton(
+            text=f"📅 {(today - timedelta(days=4)).strftime('%d.%m')}",
+            callback_data=f"wdate:{(today - timedelta(days=4)).isoformat()}"
+        )],
+        [InlineKeyboardButton(
+            text=f"📅 {(today - timedelta(days=5)).strftime('%d.%m')}",
+            callback_data=f"wdate:{(today - timedelta(days=5)).isoformat()}"
+        )],
+        [InlineKeyboardButton(
+            text=f"📅 {(today - timedelta(days=6)).strftime('%d.%m')}",
+            callback_data=f"wdate:{(today - timedelta(days=6)).isoformat()}"
+        )],
+        [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")]
+    ]
+    await callback.message.edit_text(
+        "📅 За какой день записать работу?",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
+    )
+    await state.set_state(WorkEntry.choosing_date)
+    await callback.answer()
 
 
 @dp.callback_query(F.data.startswith("wcat:"), WorkEntry.choosing_category)
@@ -307,6 +407,11 @@ async def work_category_chosen(callback: types.CallbackQuery, state: FSMContext)
         return
     cats = get_worker_categories(callback.from_user.id)
     cat_info = next(((n, e) for c, n, e in cats if c == cat_code), ("", "📦"))
+
+    data = await state.get_data()
+    d = data["work_date"].split("-")
+    date_str = f"{d[2]}.{d[1]}.{d[0]}"
+
     buttons = []
     for code, name, price, cat in cat_items:
         buttons.append([InlineKeyboardButton(
@@ -316,7 +421,9 @@ async def work_category_chosen(callback: types.CallbackQuery, state: FSMContext)
     buttons.append([InlineKeyboardButton(text="🔙 К категориям", callback_data="wcat_back")])
     buttons.append([InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")])
     await callback.message.edit_text(
-        f"{cat_info[1]} **{cat_info[0]}**\n\nВыберите работу:",
+        f"📅 **Дата: {date_str}**\n"
+        f"{cat_info[1]} **{cat_info[0]}**\n\n"
+        f"Выберите работу:",
         parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
     )
@@ -328,6 +435,11 @@ async def work_category_chosen(callback: types.CallbackQuery, state: FSMContext)
 async def work_back_to_categories(callback: types.CallbackQuery, state: FSMContext):
     items = get_price_list_for_worker(callback.from_user.id)
     worker_cats = get_worker_categories(callback.from_user.id)
+
+    data = await state.get_data()
+    d = data["work_date"].split("-")
+    date_str = f"{d[2]}.{d[1]}.{d[0]}"
+
     buttons = []
     for cat_code, cat_name, cat_emoji in worker_cats:
         count = len([i for i in items if i[3] == cat_code])
@@ -335,9 +447,12 @@ async def work_back_to_categories(callback: types.CallbackQuery, state: FSMConte
             text=f"{cat_emoji} {cat_name} ({count})",
             callback_data=f"wcat:{cat_code}"
         )])
+    buttons.append([InlineKeyboardButton(text="🔙 К датам", callback_data="wdate_back")])
     buttons.append([InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")])
     await callback.message.edit_text(
-        "📂 Выберите категорию работ:",
+        f"📅 **Дата: {date_str}**\n\n"
+        f"📂 Выберите категорию работ:",
+        parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
     )
     await state.set_state(WorkEntry.choosing_category)
@@ -353,8 +468,15 @@ async def work_chosen(callback: types.CallbackQuery, state: FSMContext):
         await callback.answer("Не найдено", show_alert=True)
         return
     await state.update_data(work_info={"code": info[0], "name": info[1], "price": info[2]})
+
+    data = await state.get_data()
+    d = data["work_date"].split("-")
+    date_str = f"{d[2]}.{d[1]}.{d[0]}"
+
     await callback.message.edit_text(
-        f"**{info[1]}** ({int(info[2])} ₽/шт)\n\nВведите количество:",
+        f"📅 **Дата: {date_str}**\n"
+        f"**{info[1]}** ({int(info[2])} ₽/шт)\n\n"
+        f"Введите количество:",
         parse_mode="Markdown"
     )
     await state.set_state(WorkEntry.entering_quantity)
@@ -372,13 +494,20 @@ async def quantity_entered(message: types.Message, state: FSMContext):
         return
     data = await state.get_data()
     info = data["work_info"]
-    total = add_work(message.from_user.id, info["code"], qty, info["price"])
-    daily = get_daily_total(message.from_user.id)
+    work_date = data.get("work_date", date.today().isoformat())
+
+    total = add_work(message.from_user.id, info["code"], qty, info["price"], work_date)
+    daily = get_daily_total(message.from_user.id, work_date)
     day_total = sum(r[3] for r in daily)
+
+    d = work_date.split("-")
+    date_str = f"{d[2]}.{d[1]}.{d[0]}"
+
     await message.answer(
         f"✅ **Записано!**\n\n"
+        f"📅 Дата: **{date_str}**\n"
         f"📦 {info['name']} × {qty} = **{int(total)} ₽**\n"
-        f"💰 Сегодня: **{int(day_total)} ₽**",
+        f"💰 За этот день: **{int(day_total)} ₽**",
         parse_mode="Markdown",
         reply_markup=get_main_keyboard(message.from_user.id)
     )
@@ -388,8 +517,9 @@ async def quantity_entered(message: types.Message, state: FSMContext):
         notify_text = (
             f"📬 **Новая запись!**\n\n"
             f"👤 {message.from_user.full_name}\n"
+            f"📅 {date_str}\n"
             f"📦 {info['name']} × {qty} = **{int(total)} ₽**\n"
-            f"💰 Итого за день: **{int(day_total)} ₽**"
+            f"💰 За этот день: **{int(day_total)} ₽**"
         )
         try:
             await bot.send_message(ADMIN_ID, notify_text, parse_mode="Markdown")
@@ -400,8 +530,9 @@ async def quantity_entered(message: types.Message, state: FSMContext):
         notify_text = (
             f"📬 **Новая запись!**\n\n"
             f"👤 {message.from_user.full_name}\n"
+            f"📅 {date_str}\n"
             f"📦 {info['name']} × {qty} = **{int(total)} ₽**\n"
-            f"💰 Итого за день: **{int(day_total)} ₽**"
+            f"💰 За этот день: **{int(day_total)} ₽**"
         )
         try:
             await bot.send_message(MANAGER_ID, notify_text, parse_mode="Markdown")
@@ -409,13 +540,6 @@ async def quantity_entered(message: types.Message, state: FSMContext):
             logging.error(f"Notify manager: {e}")
 
     await state.clear()
-
-
-@dp.callback_query(F.data == "cancel")
-async def cancel_action(callback: types.CallbackQuery, state: FSMContext):
-    await state.clear()
-    await callback.message.edit_text("❌ Отменено")
-    await callback.answer()
 
 
 # ==================== МОИ ЗАПИСИ ====================
