@@ -889,10 +889,11 @@ async def show_monthly(message: types.Message):
 # ==================== НАВИГАЦИЯ ====================
 
 @dp.message(F.text == "👑 Админ-панель")
-async def admin_panel(message: types.Message):
+async def admin_panel(message: types.Message, state: FSMContext):
     if not is_admin(message.from_user.id):
         await message.answer("⛔ Нет доступа.")
         return
+    await state.clear()
     await message.answer(
         "👑 **Админ-панель**\n\n"
         "📋 — Сводки и отчёты\n"
@@ -905,45 +906,43 @@ async def admin_panel(message: types.Message):
         reply_markup=get_admin_keyboard()
     )
 
-@dp.message(F.text == "📊 Панель отчётов")
-async def manager_panel(message: types.Message):
-    if not is_manager(message.from_user.id):
-        await message.answer("⛔ Нет доступа.")
-        return
-    await message.answer("📊 Панель отчётов", reply_markup=get_manager_keyboard())
-
 @dp.message(F.text == "➕ Добавить")
-async def menu_add(message: types.Message):
+async def menu_add(message: types.Message, state: FSMContext):
     if not is_admin(message.from_user.id):
         return
+    await state.clear()
     await message.answer("➕ **Добавить:**", parse_mode="Markdown",
                          reply_markup=get_add_keyboard())
 
 @dp.message(F.text == "✏️ Редактировать")
-async def menu_edit(message: types.Message):
+async def menu_edit(message: types.Message, state: FSMContext):
     if not is_admin(message.from_user.id):
         return
+    await state.clear()
     await message.answer("✏️ **Редактировать:**", parse_mode="Markdown",
                          reply_markup=get_edit_keyboard())
 
 @dp.message(F.text == "🗑 Удалить")
-async def menu_delete(message: types.Message):
+async def menu_delete(message: types.Message, state: FSMContext):
     if not is_admin(message.from_user.id):
         return
+    await state.clear()
     await message.answer("🗑 **Удалить:**", parse_mode="Markdown",
                          reply_markup=get_delete_keyboard())
 
 @dp.message(F.text == "📂 Справочники")
-async def menu_info(message: types.Message):
+async def menu_info(message: types.Message, state: FSMContext):
     if not is_staff(message.from_user.id):
         return
+    await state.clear()
     await message.answer("📂 **Справочники:**", parse_mode="Markdown",
                          reply_markup=get_info_keyboard())
 
 @dp.message(F.text == "💰 Деньги")
-async def menu_money(message: types.Message):
+async def menu_money(message: types.Message, state: FSMContext):
     if not is_admin(message.from_user.id):
         return
+    await state.clear()
     await message.answer(
         "💰 **Раздел «Деньги»**\n\n"
         "💳 — Авансы\n"
@@ -955,17 +954,18 @@ async def menu_money(message: types.Message):
     )
 
 @dp.message(F.text == "🔙 В админ-панель")
-async def back_to_admin(message: types.Message):
+async def back_to_admin(message: types.Message, state: FSMContext):
+    await state.clear()
     if is_admin(message.from_user.id):
         await message.answer("👑 Админ-панель", reply_markup=get_admin_keyboard())
     elif is_manager(message.from_user.id):
         await message.answer("📊 Панель отчётов", reply_markup=get_manager_keyboard())
 
 @dp.message(F.text == "🔙 Назад")
-async def back_to_main(message: types.Message):
+async def back_to_main(message: types.Message, state: FSMContext):
+    await state.clear()
     await message.answer("Главное меню",
                          reply_markup=get_main_keyboard(message.from_user.id))
-
 
 # ==================== КАТЕГОРИИ ====================
 
