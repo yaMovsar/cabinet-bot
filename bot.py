@@ -13,6 +13,7 @@ from aiogram.types import (
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from config import BOT_TOKEN, ADMIN_ID, MANAGER_ID
+
 from database import (
     init_db, add_work, get_daily_total, get_monthly_total,
     get_workers_without_records, get_all_workers_daily_summary,
@@ -28,7 +29,10 @@ from database import (
     get_today_entries, get_worker_recent_entries,
     delete_entry_by_id, update_entry_quantity, get_entry_by_id,
     get_worker_monthly_details, get_all_workers_monthly_details,
-    get_admin_monthly_detailed_all
+    get_admin_monthly_detailed_all,
+    add_advance, get_worker_advances, get_worker_advances_total,
+    delete_advance, get_all_advances_monthly,
+    get_worker_entries_by_custom_date
 )
 
 from reports import generate_monthly_report, generate_worker_report
@@ -56,10 +60,11 @@ def is_staff(uid):
 
 class WorkEntry(StatesGroup):
     choosing_date = State()
-    entering_custom_date = State()    # НОВОЕ
+    entering_custom_date = State()
     choosing_category = State()
     choosing_work = State()
     entering_quantity = State()
+    confirming_large = State()    # НОВОЕ
 
 class AdminAddCategory(StatesGroup):
     entering_code = State()
@@ -114,6 +119,19 @@ class AdminManageEntries(StatesGroup):
     entering_new_quantity = State()
     confirming_delete = State()
 
+class AdminAdvance(StatesGroup):
+    choosing_worker = State()
+    entering_amount = State()
+    entering_comment = State()
+
+class AdminDeleteAdvance(StatesGroup):
+    choosing_worker = State()
+    choosing_advance = State()
+    confirming = State()
+
+class ViewEntries(StatesGroup):
+    choosing_date = State()
+    entering_custom_date = State()
 
 # ==================== КЛАВИАТУРЫ ====================
 
@@ -158,17 +176,116 @@ def get_add_keyboard():
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
 
 
-def get_edit_keyboard():
-    """Подменю: Редактировать"""
-    buttons = [
-        [KeyboardButton(text="🔗 Назначить кат."),
-         KeyboardButton(text="🔓 Убрать кат.")],
-        [KeyboardButton(text="✏️ Расценка")],
-        [KeyboardButton(text="🔧 Записи работников")],
-        [KeyboardButton(text="🔙 В админ-панель")],
-    ]
-    return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
+@dp.message(WorkEntry.entering_quantity)
+async def quantity_entered(message: types.Message, state: FSMContext):
+    try:
+        qty = int(message.text)
+        if qty <= 0:
+            raise ValueError
+    except ValueError:
+        await message.answer("❌ Введите положительное число!")
+        return
 
+    data = await state.get_data()
+    info = data["work_info"]
+    total = qty * info["price"]
+
+    # Подтверждение если сумма > 10000
+    if total > 10000:
+        await state.update_data(quantity=qty)
+        buttons = [
+            [InlineKeyboardButton(text="✅ Да, записать!", callback_data="confirm_large:yes")],
+            [InlineKeyboardButton(text="✏️ Изменить количество", callback_data="confirm_large:edit")],
+            [InlineKeyboardButton(text="❌ Отмена", callback_data="confirm_large:cancel")]
+        ]
+        work_date = data.get("work_date", date.today().isoformat())
+        d = work_date.split("-")
+        date_str = f"{d[2]}.{d[1]}.{d[0]}"
+        await message.answer(
+            f"⚠️ **Внимание! Большая сумма!**\n\n"
+            f"📅 Дата: **{date_str}**\n"
+            f"📦 {info['name']} × {qty} = **{int(total)} ₽**\n\n"
+            f"Всё верно?",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
+        )
+        await state.set_state(WorkEntry.confirming_large)
+        return
+
+    # Обычная запись
+    await save_work_entry(message, state, qty)
+
+
+@dp.callback_query(F.data.startswith("confirm_large:"), WorkEntry.confirming_large)
+async def confirm_large_entry(callback: types.CallbackQuery, state: FSMContext):
+    action = callback.data.split(":")[1]
+
+    if action == "yes":
+        data = await state.get_data()
+        qty = data["quantity"]
+        await callback.message.delete()
+        await save_work_entry(callback.message, state, qty, user=callback.from_user)
+
+    elif action == "edit":
+        await callback.message.edit_text(
+            "Введите **правильное** количество:",
+            parse_mode="Markdown"
+        )
+        await state.set_state(WorkEntry.entering_quantity)
+
+    elif action == "cancel":
+        await callback.message.edit_text("❌ Отменено.")
+        await state.clear()
+
+    await callback.answer()
+
+
+async def save_work_entry(message, state, qty, user=None):
+    """Сохраняет запись о работе"""
+    if user is None:
+        user = message.from_user
+
+    data = await state.get_data()
+    info = data["work_info"]
+    work_date = data.get("work_date", date.today().isoformat())
+
+    total = add_work(user.id, info["code"], qty, info["price"], work_date)
+    daily = get_daily_total(user.id, work_date)
+    day_total = sum(r[3] for r in daily)
+
+    d = work_date.split("-")
+    date_str = f"{d[2]}.{d[1]}.{d[0]}"
+
+    await message.answer(
+        f"✅ **Записано!**\n\n"
+        f"📅 Дата: **{date_str}**\n"
+        f"📦 {info['name']} × {qty} = **{int(total)} ₽**\n"
+        f"💰 За этот день: **{int(day_total)} ₽**",
+        parse_mode="Markdown",
+        reply_markup=get_main_keyboard(user.id)
+    )
+
+    # Уведомление админу
+    if user.id != ADMIN_ID:
+        notify_text = (
+            f"📬 **Новая запись!**\n\n"
+            f"👤 {user.full_name}\n"
+            f"📅 {date_str}\n"
+            f"📦 {info['name']} × {qty} = **{int(total)} ₽**\n"
+            f"💰 За этот день: **{int(day_total)} ₽**"
+        )
+        try:
+            await bot.send_message(ADMIN_ID, notify_text, parse_mode="Markdown")
+        except Exception as e:
+            logging.error(f"Notify admin: {e}")
+
+    if MANAGER_ID and user.id != MANAGER_ID:
+        try:
+            await bot.send_message(MANAGER_ID, notify_text, parse_mode="Markdown")
+        except Exception as e:
+            logging.error(f"Notify manager: {e}")
+
+    await state.clear()
 
 def get_delete_keyboard():
     """Подменю: Удалить"""
@@ -610,68 +727,149 @@ async def quantity_entered(message: types.Message, state: FSMContext):
 
 @dp.message(F.text == "📋 Мои записи")
 async def my_entries(message: types.Message, state: FSMContext):
-    entries = get_today_entries(message.from_user.id)
-    if not entries:
-        await message.answer("📭 Сегодня записей нет.")
-        return
-    text = f"📋 **Записи за {date.today().strftime('%d.%m.%Y')}:**\n\n"
-    buttons = []
-    for entry_id, name, qty, price, total, created in entries:
-        time_str = created[11:16] if len(created) > 16 else ""
-        text += f"🔹 {name} × {int(qty)} = **{int(total)}₽** ({time_str})\n"
-        buttons.append([InlineKeyboardButton(
-            text=f"❌ {name} × {int(qty)} ({int(total)}₽)",
-            callback_data=f"mydel:{entry_id}"
-        )])
-    day_total = sum(e[4] for e in entries)
-    text += f"\n💰 **Итого: {int(day_total)}₽**\n\nНажмите чтобы удалить:"
-    buttons.append([InlineKeyboardButton(text="🔙 Назад", callback_data="myback")])
-    await message.answer(text, parse_mode="Markdown",
-                         reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
-    await state.set_state(WorkerDeleteEntry.choosing_entry)
+    from datetime import timedelta
+    today = date.today()
+    yesterday = today - timedelta(days=1)
 
-@dp.callback_query(F.data.startswith("mydel:"), WorkerDeleteEntry.choosing_entry)
-async def my_entry_chosen(callback: types.CallbackQuery, state: FSMContext):
-    entry_id = int(callback.data.split(":")[1])
-    entry = get_entry_by_id(entry_id)
-    if not entry:
-        await callback.answer("Не найдена", show_alert=True)
-        await state.clear()
-        return
-    if entry[6] != callback.from_user.id:
-        await callback.answer("Не ваша запись!", show_alert=True)
-        await state.clear()
-        return
-    await state.update_data(entry_id=entry_id, entry_name=entry[1],
-                            entry_qty=entry[2], entry_total=entry[4])
     buttons = [
-        [InlineKeyboardButton(text="✅ Да, удалить!", callback_data="myconf:yes")],
-        [InlineKeyboardButton(text="❌ Отмена", callback_data="myconf:no")]
+        [InlineKeyboardButton(
+            text=f"📅 Сегодня ({today.strftime('%d.%m')})",
+            callback_data=f"viewdate:{today.isoformat()}"
+        )],
+        [InlineKeyboardButton(
+            text=f"📅 Вчера ({yesterday.strftime('%d.%m')})",
+            callback_data=f"viewdate:{yesterday.isoformat()}"
+        )],
+        [InlineKeyboardButton(
+            text="📅 Выбрать дату...",
+            callback_data="viewdate:custom"
+        )],
+        [InlineKeyboardButton(text="❌ Отмена", callback_data="myback")]
     ]
-    await callback.message.edit_text(
-        f"⚠️ **Удалить?**\n\n📦 {entry[1]} × {int(entry[2])} = **{int(entry[4])}₽**",
-        parse_mode="Markdown",
+    await message.answer(
+        "📋 За какой день показать записи?",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
     )
-    await state.set_state(WorkerDeleteEntry.confirming)
-    await callback.answer()
+    await state.set_state(ViewEntries.choosing_date)
 
-@dp.callback_query(F.data.startswith("myconf:"), WorkerDeleteEntry.confirming)
-async def my_entry_confirm(callback: types.CallbackQuery, state: FSMContext):
-    if callback.data.split(":")[1] == "yes":
-        data = await state.get_data()
-        delete_entry_by_id(data["entry_id"])
+
+@dp.callback_query(F.data.startswith("viewdate:"), ViewEntries.choosing_date)
+async def view_date_chosen(callback: types.CallbackQuery, state: FSMContext):
+    value = callback.data.split(":", 1)[1]
+
+    if value == "custom":
         await callback.message.edit_text(
-            f"✅ Удалено: {data['entry_name']} × {int(data['entry_qty'])}")
-    else:
-        await callback.message.edit_text("❌ Отменено.")
-    await state.clear()
+            "📅 Введите дату в формате **ДД.ММ.ГГГГ**\n\n"
+            "Например: `25.05.2025`",
+            parse_mode="Markdown"
+        )
+        await state.set_state(ViewEntries.entering_custom_date)
+        await callback.answer()
+        return
+
+    await show_entries_for_date(callback.message, state,
+                                 callback.from_user.id, value, edit=True)
     await callback.answer()
 
-@dp.callback_query(F.data == "myback")
-async def my_entries_back(callback: types.CallbackQuery, state: FSMContext):
-    await state.clear()
-    await callback.message.edit_text("👌 Ок")
+
+@dp.message(ViewEntries.entering_custom_date)
+async def view_custom_date(message: types.Message, state: FSMContext):
+    text = message.text.strip()
+    try:
+        parts = text.split(".")
+        if len(parts) != 3:
+            raise ValueError
+        chosen = date(int(parts[2]), int(parts[1]), int(parts[0]))
+    except (ValueError, IndexError):
+        await message.answer(
+            "❌ Неверный формат!\n"
+            "Введите дату как **ДД.ММ.ГГГГ**\n"
+            "Например: `25.05.2025`",
+            parse_mode="Markdown"
+        )
+        return
+
+    await show_entries_for_date(message, state,
+                                 message.from_user.id, chosen.isoformat(), edit=False)
+
+
+async def show_entries_for_date(message, state, user_id, target_date, edit=False):
+    """Показывает записи за выбранную дату"""
+    entries = get_worker_entries_by_custom_date(user_id, target_date)
+
+    d = target_date.split("-")
+    date_str = f"{d[2]}.{d[1]}.{d[0]}"
+
+    if not entries:
+        text = f"📭 Нет записей за **{date_str}**"
+        buttons = [[InlineKeyboardButton(text="🔙 Назад", callback_data="view_back")]]
+        if edit:
+            await message.edit_text(text, parse_mode="Markdown",
+                                     reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+        else:
+            await message.answer(text, parse_mode="Markdown",
+                                  reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+        await state.set_state(WorkerDeleteEntry.choosing_entry)
+        return
+
+    text = f"📋 **Записи за {date_str}:**\n\n"
+    buttons = []
+    day_total = 0
+
+    for entry_id, name, cat_name, cat_emoji, qty, price, total, created in entries:
+        time_str = created[11:16] if len(created) > 16 else ""
+        text += f"{cat_emoji} {name} × {int(qty)} = **{int(total)}₽** ({time_str})\n"
+        day_total += total
+        # Удалять можно только свои записи за сегодня
+        if target_date == date.today().isoformat():
+            buttons.append([InlineKeyboardButton(
+                text=f"❌ {name} × {int(qty)} ({int(total)}₽)",
+                callback_data=f"mydel:{entry_id}"
+            )])
+
+    text += f"\n💰 **Итого: {int(day_total)}₽**"
+
+    if target_date == date.today().isoformat() and buttons:
+        text += "\n\nНажмите чтобы удалить:"
+
+    buttons.append([InlineKeyboardButton(text="🔙 Назад", callback_data="view_back")])
+
+    if edit:
+        await message.edit_text(text, parse_mode="Markdown",
+                                 reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+    else:
+        await message.answer(text, parse_mode="Markdown",
+                              reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+
+    await state.set_state(WorkerDeleteEntry.choosing_entry)
+
+
+@dp.callback_query(F.data == "view_back")
+async def view_entries_back(callback: types.CallbackQuery, state: FSMContext):
+    from datetime import timedelta
+    today = date.today()
+    yesterday = today - timedelta(days=1)
+
+    buttons = [
+        [InlineKeyboardButton(
+            text=f"📅 Сегодня ({today.strftime('%d.%m')})",
+            callback_data=f"viewdate:{today.isoformat()}"
+        )],
+        [InlineKeyboardButton(
+            text=f"📅 Вчера ({yesterday.strftime('%d.%m')})",
+            callback_data=f"viewdate:{yesterday.isoformat()}"
+        )],
+        [InlineKeyboardButton(
+            text="📅 Выбрать дату...",
+            callback_data="viewdate:custom"
+        )],
+        [InlineKeyboardButton(text="❌ Закрыть", callback_data="myback")]
+    ]
+    await callback.message.edit_text(
+        "📋 За какой день показать записи?",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
+    )
+    await state.set_state(ViewEntries.choosing_date)
     await callback.answer()
 
 
@@ -1482,6 +1680,232 @@ async def admin_entries_back(callback: types.CallbackQuery, state: FSMContext):
     await callback.message.edit_text("👌 Ок")
     await callback.answer()
 
+# ==================== АВАНСЫ ====================
+
+@dp.message(F.text == "💳 Выдать аванс")
+async def advance_start(message: types.Message, state: FSMContext):
+    if not is_admin(message.from_user.id):
+        return
+    workers = get_all_workers()
+    if not workers:
+        await message.answer("⚠️ Нет работников.")
+        return
+    buttons = []
+    for tid, name in workers:
+        if tid == ADMIN_ID:
+            continue
+        earned = sum(r[3] for r in get_daily_total(tid)) if get_daily_total(tid) else 0
+        today = date.today()
+        adv_total = get_worker_advances_total(tid, today.year, today.month)
+        buttons.append([InlineKeyboardButton(
+            text=f"👤 {name} (аванс: {int(adv_total)}₽)",
+            callback_data=f"adv_w:{tid}"
+        )])
+    buttons.append([InlineKeyboardButton(text="❌ Отмена", callback_data="cdel")])
+    await message.answer("👤 Кому выдать аванс?",
+                         reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+    await state.set_state(AdminAdvance.choosing_worker)
+
+
+@dp.callback_query(F.data.startswith("adv_w:"), AdminAdvance.choosing_worker)
+async def advance_worker_chosen(callback: types.CallbackQuery, state: FSMContext):
+    wid = int(callback.data.split(":")[1])
+    wname = next((n for t, n in get_all_workers() if t == wid), "?")
+    today = date.today()
+    earned = 0
+    monthly = get_monthly_total(wid, today.year, today.month)
+    for _, _, _, sub in monthly:
+        earned += sub
+    adv_total = get_worker_advances_total(wid, today.year, today.month)
+    balance = earned - adv_total
+
+    await state.update_data(worker_id=wid, worker_name=wname)
+    await callback.message.edit_text(
+        f"👤 **{wname}**\n\n"
+        f"💰 Заработано: **{int(earned)}₽**\n"
+        f"💳 Авансы: **{int(adv_total)}₽**\n"
+        f"📊 Остаток: **{int(balance)}₽**\n\n"
+        f"Введите сумму аванса:",
+        parse_mode="Markdown"
+    )
+    await state.set_state(AdminAdvance.entering_amount)
+    await callback.answer()
+
+
+@dp.message(AdminAdvance.entering_amount)
+async def advance_amount(message: types.Message, state: FSMContext):
+    try:
+        amount = float(message.text.replace(',', '.'))
+        if amount <= 0:
+            raise ValueError
+    except ValueError:
+        await message.answer("❌ Введите положительное число!")
+        return
+    await state.update_data(amount=amount)
+    await message.answer(
+        f"💳 Сумма: **{int(amount)}₽**\n\n"
+        f"Введите комментарий (или `-` чтобы пропустить):",
+        parse_mode="Markdown"
+    )
+    await state.set_state(AdminAdvance.entering_comment)
+
+
+@dp.message(AdminAdvance.entering_comment)
+async def advance_comment(message: types.Message, state: FSMContext):
+    comment = message.text.strip()
+    if comment == "-":
+        comment = ""
+    data = await state.get_data()
+    add_advance(data["worker_id"], data["amount"], comment)
+
+    today = date.today()
+    earned = 0
+    monthly = get_monthly_total(data["worker_id"], today.year, today.month)
+    for _, _, _, sub in monthly:
+        earned += sub
+    adv_total = get_worker_advances_total(data["worker_id"], today.year, today.month)
+    balance = earned - adv_total
+
+    text = (
+        f"✅ **Аванс выдан!**\n\n"
+        f"👤 {data['worker_name']}\n"
+        f"💳 Сумма: **{int(data['amount'])}₽**\n"
+    )
+    if comment:
+        text += f"💬 {comment}\n"
+    text += (
+        f"\n📊 **Баланс:**\n"
+        f"💰 Заработано: {int(earned)}₽\n"
+        f"💳 Авансы: {int(adv_total)}₽\n"
+        f"📊 Остаток: **{int(balance)}₽**"
+    )
+    await message.answer(text, parse_mode="Markdown", reply_markup=get_edit_keyboard())
+    await state.clear()
+
+
+@dp.message(F.text == "💳 Удалить аванс")
+async def delete_advance_start(message: types.Message, state: FSMContext):
+    if not is_admin(message.from_user.id):
+        return
+    workers = get_all_workers()
+    buttons = []
+    today = date.today()
+    for tid, name in workers:
+        if tid == ADMIN_ID:
+            continue
+        advances = get_worker_advances(tid, today.year, today.month)
+        if advances:
+            total = sum(a[1] for a in advances)
+            buttons.append([InlineKeyboardButton(
+                text=f"👤 {name} ({int(total)}₽, {len(advances)} шт)",
+                callback_data=f"dadv_w:{tid}"
+            )])
+    if not buttons:
+        await message.answer("📭 Нет авансов за этот месяц.")
+        return
+    buttons.append([InlineKeyboardButton(text="❌ Отмена", callback_data="cdel")])
+    await message.answer("👤 Выберите работника:",
+                         reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+    await state.set_state(AdminDeleteAdvance.choosing_worker)
+
+
+@dp.callback_query(F.data.startswith("dadv_w:"), AdminDeleteAdvance.choosing_worker)
+async def del_advance_worker(callback: types.CallbackQuery, state: FSMContext):
+    wid = int(callback.data.split(":")[1])
+    wname = next((n for t, n in get_all_workers() if t == wid), "?")
+    await state.update_data(worker_id=wid, worker_name=wname)
+    today = date.today()
+    advances = get_worker_advances(wid, today.year, today.month)
+    buttons = []
+    for adv_id, amount, comment, adv_date, created in advances:
+        d = adv_date.split("-")
+        label = f"{d[2]}.{d[1]} — {int(amount)}₽"
+        if comment:
+            label += f" ({comment[:20]})"
+        buttons.append([InlineKeyboardButton(
+            text=f"💳 {label}",
+            callback_data=f"dadv_a:{adv_id}"
+        )])
+    buttons.append([InlineKeyboardButton(text="🔙 Назад", callback_data="cdel")])
+    await callback.message.edit_text(
+        f"👤 **{wname}** — авансы:\n\nВыберите для удаления:",
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
+    )
+    await state.set_state(AdminDeleteAdvance.choosing_advance)
+    await callback.answer()
+
+
+@dp.callback_query(F.data.startswith("dadv_a:"), AdminDeleteAdvance.choosing_advance)
+async def del_advance_chosen(callback: types.CallbackQuery, state: FSMContext):
+    adv_id = int(callback.data.split(":")[1])
+    await state.update_data(advance_id=adv_id)
+    buttons = [
+        [InlineKeyboardButton(text="✅ Да, удалить!", callback_data="dadv_c:yes")],
+        [InlineKeyboardButton(text="❌ Нет", callback_data="dadv_c:no")]
+    ]
+    await callback.message.edit_text(
+        "⚠️ Удалить этот аванс?",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
+    )
+    await state.set_state(AdminDeleteAdvance.confirming)
+    await callback.answer()
+
+
+@dp.callback_query(F.data.startswith("dadv_c:"), AdminDeleteAdvance.confirming)
+async def del_advance_confirm(callback: types.CallbackQuery, state: FSMContext):
+    if callback.data.split(":")[1] == "yes":
+        data = await state.get_data()
+        deleted = delete_advance(data["advance_id"])
+        if deleted:
+            await callback.message.edit_text(
+                f"✅ Аванс {int(deleted[1])}₽ удалён!")
+        else:
+            await callback.message.edit_text("❌ Не найден.")
+    else:
+        await callback.message.edit_text("❌ Отменено.")
+    await state.clear()
+    await callback.answer()
+
+
+@dp.message(F.text == "💰 Баланс работников")
+async def show_balances(message: types.Message):
+    if not is_staff(message.from_user.id):
+        return
+    today = date.today()
+    MONTHS = ["", "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
+              "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"]
+
+    text = f"💰 **Баланс — {MONTHS[today.month]} {today.year}**\n\n"
+    workers = get_all_workers()
+    grand_earned = 0
+    grand_advance = 0
+
+    for tid, name in workers:
+        earned = 0
+        monthly = get_monthly_total(tid, today.year, today.month)
+        for _, _, _, sub in monthly:
+            earned += sub
+        adv_total = get_worker_advances_total(tid, today.year, today.month)
+        balance = earned - adv_total
+
+        if earned > 0 or adv_total > 0:
+            icon = "✅" if balance >= 0 else "⚠️"
+            text += (
+                f"{icon} **{name}**\n"
+                f"   💰 Заработано: {int(earned)}₽\n"
+                f"   💳 Авансы: {int(adv_total)}₽\n"
+                f"   📊 Остаток: **{int(balance)}₽**\n\n"
+            )
+            grand_earned += earned
+            grand_advance += adv_total
+
+    text += f"━━━━━━━━━━━━━━━━━━━\n"
+    text += f"💰 Всего заработано: **{int(grand_earned)}₽**\n"
+    text += f"💳 Всего авансов: **{int(grand_advance)}₽**\n"
+    text += f"📊 Общий остаток: **{int(grand_earned - grand_advance)}₽**"
+
+    await send_long_message(message, text)
 
 # ==================== EXCEL ОТЧЁТЫ ====================
 

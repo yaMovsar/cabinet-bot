@@ -63,6 +63,76 @@ def init_db():
     conn.commit()
     conn.close()
 
+def init_db():
+    conn = _connect()
+    c = conn.cursor()
+
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS workers (
+            telegram_id INTEGER PRIMARY KEY,
+            name TEXT NOT NULL,
+            registered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS categories (
+            code TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            emoji TEXT DEFAULT '📦'
+        )
+    """)
+
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS price_list (
+            code TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            price REAL NOT NULL,
+            category_code TEXT NOT NULL,
+            is_active BOOLEAN DEFAULT 1,
+            FOREIGN KEY (category_code) REFERENCES categories(code)
+        )
+    """)
+
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS worker_categories (
+            worker_id INTEGER NOT NULL,
+            category_code TEXT NOT NULL,
+            PRIMARY KEY (worker_id, category_code),
+            FOREIGN KEY (worker_id) REFERENCES workers(telegram_id),
+            FOREIGN KEY (category_code) REFERENCES categories(code)
+        )
+    """)
+
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS work_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            worker_id INTEGER NOT NULL,
+            work_code TEXT NOT NULL,
+            quantity INTEGER NOT NULL,
+            price_per_unit REAL NOT NULL,
+            total REAL NOT NULL,
+            work_date DATE NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (worker_id) REFERENCES workers(telegram_id),
+            FOREIGN KEY (work_code) REFERENCES price_list(code)
+        )
+    """)
+
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS advances (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            worker_id INTEGER NOT NULL,
+            amount REAL NOT NULL,
+            comment TEXT DEFAULT '',
+            advance_date DATE NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (worker_id) REFERENCES workers(telegram_id)
+        )
+    """)
+
+    conn.commit()
+    conn.close()
 
 # ==================== КАТЕГОРИИ ====================
 
@@ -506,5 +576,120 @@ def get_admin_monthly_detailed_all(year=None, month=None):
           AND strftime('%m', wl.work_date) = ?
         ORDER BY w.name, c.name, wl.work_date, wl.id
     """, (str(year), f"{month:02d}")).fetchall()
+    conn.close()
+    return rows
+
+# ==================== АВАНСЫ ====================
+
+def init_advances_table():
+    """Создаёт таблицу авансов если не существует"""
+    conn = _connect()
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS advances (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            worker_id INTEGER NOT NULL,
+            amount REAL NOT NULL,
+            comment TEXT DEFAULT '',
+            advance_date DATE NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (worker_id) REFERENCES workers(telegram_id)
+        )
+    """)
+    conn.commit()
+    conn.close()
+
+
+def add_advance(worker_id, amount, comment="", advance_date=None):
+    if advance_date is None:
+        advance_date = date.today()
+    conn = _connect()
+    conn.execute("""
+        INSERT INTO advances (worker_id, amount, comment, advance_date)
+        VALUES (?, ?, ?, ?)
+    """, (worker_id, amount, comment, advance_date))
+    conn.commit()
+    conn.close()
+
+
+def get_worker_advances(worker_id, year=None, month=None):
+    if year is None:
+        year = date.today().year
+    if month is None:
+        month = date.today().month
+    conn = _connect()
+    rows = conn.execute("""
+        SELECT id, amount, comment, advance_date, created_at
+        FROM advances
+        WHERE worker_id = ?
+          AND strftime('%Y', advance_date) = ?
+          AND strftime('%m', advance_date) = ?
+        ORDER BY advance_date
+    """, (worker_id, str(year), f"{month:02d}")).fetchall()
+    conn.close()
+    return rows
+
+
+def get_worker_advances_total(worker_id, year=None, month=None):
+    if year is None:
+        year = date.today().year
+    if month is None:
+        month = date.today().month
+    conn = _connect()
+    result = conn.execute("""
+        SELECT COALESCE(SUM(amount), 0)
+        FROM advances
+        WHERE worker_id = ?
+          AND strftime('%Y', advance_date) = ?
+          AND strftime('%m', advance_date) = ?
+    """, (worker_id, str(year), f"{month:02d}")).fetchone()
+    conn.close()
+    return result[0]
+
+
+def delete_advance(advance_id):
+    conn = _connect()
+    advance = conn.execute(
+        "SELECT id, amount, comment, advance_date, worker_id FROM advances WHERE id = ?",
+        (advance_id,)
+    ).fetchone()
+    if advance:
+        conn.execute("DELETE FROM advances WHERE id = ?", (advance_id,))
+        conn.commit()
+    conn.close()
+    return advance
+
+
+def get_all_advances_monthly(year=None, month=None):
+    if year is None:
+        year = date.today().year
+    if month is None:
+        month = date.today().month
+    conn = _connect()
+    rows = conn.execute("""
+        SELECT w.telegram_id, w.name, 
+               COALESCE(SUM(a.amount), 0) as total_advance
+        FROM workers w
+        LEFT JOIN advances a ON w.telegram_id = a.worker_id
+            AND strftime('%Y', a.advance_date) = ?
+            AND strftime('%m', a.advance_date) = ?
+        GROUP BY w.telegram_id, w.name
+        ORDER BY w.name
+    """, (str(year), f"{month:02d}")).fetchall()
+    conn.close()
+    return rows
+
+
+def get_worker_entries_by_custom_date(worker_id, target_date):
+    """Получить записи работника за конкретную дату с подробностями"""
+    conn = _connect()
+    rows = conn.execute("""
+        SELECT wl.id, pl.name, c.name, c.emoji, wl.quantity, 
+               wl.price_per_unit, wl.total, wl.created_at
+        FROM work_log wl
+        JOIN price_list pl ON wl.work_code = pl.code
+        JOIN categories c ON pl.category_code = c.code
+        WHERE wl.worker_id = ? AND wl.work_date = ?
+        ORDER BY wl.created_at
+    """, (worker_id, target_date)).fetchall()
     conn.close()
     return rows
