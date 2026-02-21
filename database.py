@@ -1,7 +1,10 @@
 import sqlite3
+import os
 from datetime import date
 
-DB_NAME = "production.db"
+# Путь к Volume Railway (данные сохраняются между деплоями)
+VOLUME_PATH = os.getenv("RAILWAY_VOLUME_MOUNT_PATH", ".")
+DB_NAME = os.path.join(VOLUME_PATH, "production.db")
 
 
 def _connect():
