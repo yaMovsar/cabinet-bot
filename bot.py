@@ -55,7 +55,8 @@ def is_staff(uid):
 # ==================== СОСТОЯНИЯ ====================
 
 class WorkEntry(StatesGroup):
-    choosing_date = State()        # НОВОЕ
+    choosing_date = State()
+    entering_custom_date = State()    # НОВОЕ
     choosing_category = State()
     choosing_work = State()
     entering_quantity = State()
@@ -266,34 +267,20 @@ async def start_work_entry(message: types.Message, state: FSMContext):
 
     from datetime import timedelta
     today = date.today()
+    yesterday = today - timedelta(days=1)
+
     buttons = [
         [InlineKeyboardButton(
             text=f"📅 Сегодня ({today.strftime('%d.%m')})",
             callback_data=f"wdate:{today.isoformat()}"
         )],
         [InlineKeyboardButton(
-            text=f"📅 Вчера ({(today - timedelta(days=1)).strftime('%d.%m')})",
-            callback_data=f"wdate:{(today - timedelta(days=1)).isoformat()}"
+            text=f"📅 Вчера ({yesterday.strftime('%d.%m')})",
+            callback_data=f"wdate:{yesterday.isoformat()}"
         )],
         [InlineKeyboardButton(
-            text=f"📅 Позавчера ({(today - timedelta(days=2)).strftime('%d.%m')})",
-            callback_data=f"wdate:{(today - timedelta(days=2)).isoformat()}"
-        )],
-        [InlineKeyboardButton(
-            text=f"📅 {(today - timedelta(days=3)).strftime('%d.%m')}",
-            callback_data=f"wdate:{(today - timedelta(days=3)).isoformat()}"
-        )],
-        [InlineKeyboardButton(
-            text=f"📅 {(today - timedelta(days=4)).strftime('%d.%m')}",
-            callback_data=f"wdate:{(today - timedelta(days=4)).isoformat()}"
-        )],
-        [InlineKeyboardButton(
-            text=f"📅 {(today - timedelta(days=5)).strftime('%d.%m')}",
-            callback_data=f"wdate:{(today - timedelta(days=5)).isoformat()}"
-        )],
-        [InlineKeyboardButton(
-            text=f"📅 {(today - timedelta(days=6)).strftime('%d.%m')}",
-            callback_data=f"wdate:{(today - timedelta(days=6)).isoformat()}"
+            text="📅 Выбрать дату...",
+            callback_data="wdate:custom"
         )],
         [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")]
     ]
@@ -306,14 +293,106 @@ async def start_work_entry(message: types.Message, state: FSMContext):
 
 @dp.callback_query(F.data.startswith("wdate:"), WorkEntry.choosing_date)
 async def work_date_chosen(callback: types.CallbackQuery, state: FSMContext):
-    chosen_date = callback.data.split(":")[1]
+    value = callback.data.split(":", 1)[1]
+
+    if value == "custom":
+        await callback.message.edit_text(
+            "📅 Введите дату в формате **ДД.ММ.ГГГГ**\n\n"
+            "Например: `25.05.2025`",
+            parse_mode="Markdown"
+        )
+        await state.set_state(WorkEntry.entering_custom_date)
+        await callback.answer()
+        return
+
+    chosen_date = value
+    await state.update_data(work_date=chosen_date)
+    await show_category_or_work(callback, state, chosen_date)
+    await callback.answer()
+
+
+@dp.message(WorkEntry.entering_custom_date)
+async def custom_date_entered(message: types.Message, state: FSMContext):
+    text = message.text.strip()
+    try:
+        parts = text.split(".")
+        if len(parts) != 3:
+            raise ValueError
+        day = int(parts[0])
+        month = int(parts[1])
+        year = int(parts[2])
+        chosen = date(year, month, day)
+
+        if chosen > date.today():
+            await message.answer("❌ Нельзя записать на будущую дату!")
+            return
+
+        from datetime import timedelta
+        if chosen < date.today() - timedelta(days=90):
+            await message.answer("❌ Нельзя записать дату старше 90 дней!")
+            return
+
+    except (ValueError, IndexError):
+        await message.answer(
+            "❌ Неверный формат!\n\n"
+            "Введите дату как **ДД.ММ.ГГГГ**\n"
+            "Например: `25.05.2025`",
+            parse_mode="Markdown"
+        )
+        return
+
+    chosen_date = chosen.isoformat()
     await state.update_data(work_date=chosen_date)
 
+    items = get_price_list_for_worker(message.from_user.id)
+    worker_cats = get_worker_categories(message.from_user.id)
     d = chosen_date.split("-")
     date_str = f"{d[2]}.{d[1]}.{d[0]}"
 
+    if len(worker_cats) == 1:
+        cat_code = worker_cats[0][0]
+        cat_items = [i for i in items if i[3] == cat_code]
+        buttons = []
+        for code, name, price, cat in cat_items:
+            buttons.append([InlineKeyboardButton(
+                text=f"{name} — {int(price)} ₽",
+                callback_data=f"work:{code}"
+            )])
+        buttons.append([InlineKeyboardButton(text="🔙 К датам", callback_data="wdate_back")])
+        buttons.append([InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")])
+        await message.answer(
+            f"📅 **Дата: {date_str}**\n"
+            f"📋 {worker_cats[0][2]} **{worker_cats[0][1]}**\n\n"
+            f"Выберите работу:",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
+        )
+        await state.set_state(WorkEntry.choosing_work)
+    else:
+        buttons = []
+        for cat_code, cat_name, cat_emoji in worker_cats:
+            count = len([i for i in items if i[3] == cat_code])
+            buttons.append([InlineKeyboardButton(
+                text=f"{cat_emoji} {cat_name} ({count})",
+                callback_data=f"wcat:{cat_code}"
+            )])
+        buttons.append([InlineKeyboardButton(text="🔙 К датам", callback_data="wdate_back")])
+        buttons.append([InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")])
+        await message.answer(
+            f"📅 **Дата: {date_str}**\n\n"
+            f"📂 Выберите категорию работ:",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
+        )
+        await state.set_state(WorkEntry.choosing_category)
+
+
+async def show_category_or_work(callback, state, chosen_date):
+    """Показывает категории или работы после выбора даты"""
     items = get_price_list_for_worker(callback.from_user.id)
     worker_cats = get_worker_categories(callback.from_user.id)
+    d = chosen_date.split("-")
+    date_str = f"{d[2]}.{d[1]}.{d[0]}"
 
     if len(worker_cats) == 1:
         cat_code = worker_cats[0][0]
@@ -351,41 +430,26 @@ async def work_date_chosen(callback: types.CallbackQuery, state: FSMContext):
             reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
         )
         await state.set_state(WorkEntry.choosing_category)
-    await callback.answer()
 
 
 @dp.callback_query(F.data == "wdate_back")
 async def work_back_to_dates(callback: types.CallbackQuery, state: FSMContext):
     from datetime import timedelta
     today = date.today()
+    yesterday = today - timedelta(days=1)
+
     buttons = [
         [InlineKeyboardButton(
             text=f"📅 Сегодня ({today.strftime('%d.%m')})",
             callback_data=f"wdate:{today.isoformat()}"
         )],
         [InlineKeyboardButton(
-            text=f"📅 Вчера ({(today - timedelta(days=1)).strftime('%d.%m')})",
-            callback_data=f"wdate:{(today - timedelta(days=1)).isoformat()}"
+            text=f"📅 Вчера ({yesterday.strftime('%d.%m')})",
+            callback_data=f"wdate:{yesterday.isoformat()}"
         )],
         [InlineKeyboardButton(
-            text=f"📅 Позавчера ({(today - timedelta(days=2)).strftime('%d.%m')})",
-            callback_data=f"wdate:{(today - timedelta(days=2)).isoformat()}"
-        )],
-        [InlineKeyboardButton(
-            text=f"📅 {(today - timedelta(days=3)).strftime('%d.%m')}",
-            callback_data=f"wdate:{(today - timedelta(days=3)).isoformat()}"
-        )],
-        [InlineKeyboardButton(
-            text=f"📅 {(today - timedelta(days=4)).strftime('%d.%m')}",
-            callback_data=f"wdate:{(today - timedelta(days=4)).isoformat()}"
-        )],
-        [InlineKeyboardButton(
-            text=f"📅 {(today - timedelta(days=5)).strftime('%d.%m')}",
-            callback_data=f"wdate:{(today - timedelta(days=5)).isoformat()}"
-        )],
-        [InlineKeyboardButton(
-            text=f"📅 {(today - timedelta(days=6)).strftime('%d.%m')}",
-            callback_data=f"wdate:{(today - timedelta(days=6)).isoformat()}"
+            text="📅 Выбрать дату...",
+            callback_data="wdate:custom"
         )],
         [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")]
     ]
