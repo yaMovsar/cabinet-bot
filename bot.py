@@ -230,7 +230,10 @@ def get_manager_keyboard():
 async def send_long_message(target, text, parse_mode="Markdown"):
     MAX_LEN = 4000
     if len(text) <= MAX_LEN:
-        await target.answer(text, parse_mode=parse_mode)
+        try:
+            await target.answer(text, parse_mode=parse_mode)
+        except Exception:
+            await target.answer(text, parse_mode=None)
         return
     parts = []
     current = ""
@@ -244,13 +247,34 @@ async def send_long_message(target, text, parse_mode="Markdown"):
         parts.append(current)
     for part in parts:
         if part.strip():
-            await target.answer(part, parse_mode=parse_mode)
+            try:
+                await target.answer(part, parse_mode=parse_mode)
+            except Exception:
+                await target.answer(part, parse_mode=None)
 
 
-# ==================== /start ====================
+def make_work_buttons(cat_items, columns=2):
+    """Формирует кнопки работ в несколько колонок"""
+    buttons = []
+    row = []
+    for code, name, price, cat in cat_items:
+        row.append(InlineKeyboardButton(
+            text=f"{name} {int(price)}₽",
+            callback_data=f"work:{code}"
+        ))
+        if len(row) == columns:
+            buttons.append(row)
+            row = []
+    if row:
+        buttons.append(row)
+    return buttons
+
+
+# ==================== /start и /cancel ====================
 
 @dp.message(Command("start"))
-async def cmd_start(message: types.Message):
+async def cmd_start(message: types.Message, state: FSMContext):
+    await state.clear()
     uid = message.from_user.id
     add_worker(uid, message.from_user.full_name)
     if is_admin(uid):
@@ -276,10 +300,18 @@ async def cmd_start(message: types.Message):
     await message.answer(text, reply_markup=get_main_keyboard(uid))
 
 
+@dp.message(Command("cancel"))
+async def cmd_cancel(message: types.Message, state: FSMContext):
+    await state.clear()
+    await message.answer("❌ Действие отменено.",
+                         reply_markup=get_main_keyboard(message.from_user.id))
+
+
 # ==================== ЗАПИСАТЬ РАБОТУ ====================
 
 @dp.message(F.text == "📝 Записать работу")
 async def start_work_entry(message: types.Message, state: FSMContext):
+    await state.clear()
     items = get_price_list_for_worker(message.from_user.id)
     if not items:
         await message.answer("⚠️ Вам не назначены категории.")
@@ -316,9 +348,8 @@ async def work_date_chosen(callback: types.CallbackQuery, state: FSMContext):
 
     if value == "custom":
         await callback.message.edit_text(
-            "📅 Введите дату в формате **ДД.ММ.ГГГГ**\n\n"
-            "Например: `25.05.2025`",
-            parse_mode="Markdown"
+            "📅 Введите дату в формате ДД.ММ.ГГГГ\n\n"
+            "Например: 25.05.2025"
         )
         await state.set_state(WorkEntry.entering_custom_date)
         await callback.answer()
@@ -350,9 +381,8 @@ async def custom_date_entered(message: types.Message, state: FSMContext):
     except (ValueError, IndexError):
         await message.answer(
             "❌ Неверный формат!\n\n"
-            "Введите дату как **ДД.ММ.ГГГГ**\n"
-            "Например: `25.05.2025`",
-            parse_mode="Markdown"
+            "Введите дату как ДД.ММ.ГГГГ\n"
+            "Например: 25.05.2025"
         )
         return
 
@@ -371,10 +401,9 @@ async def custom_date_entered(message: types.Message, state: FSMContext):
         buttons.append([InlineKeyboardButton(text="🔙 К датам", callback_data="wdate_back")])
         buttons.append([InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")])
         await message.answer(
-            f"📅 **Дата: {date_str}**\n"
-            f"📋 {worker_cats[0][2]} **{worker_cats[0][1]}**\n\n"
+            f"📅 Дата: {date_str}\n"
+            f"📋 {worker_cats[0][2]} {worker_cats[0][1]}\n\n"
             f"Выберите работу:",
-            parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
         )
         await state.set_state(WorkEntry.choosing_work)
@@ -389,12 +418,12 @@ async def custom_date_entered(message: types.Message, state: FSMContext):
         buttons.append([InlineKeyboardButton(text="🔙 К датам", callback_data="wdate_back")])
         buttons.append([InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")])
         await message.answer(
-            f"📅 **Дата: {date_str}**\n\n"
+            f"📅 Дата: {date_str}\n\n"
             f"📂 Выберите категорию работ:",
-            parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
         )
         await state.set_state(WorkEntry.choosing_category)
+
 
 async def show_category_or_work(callback, state, chosen_date):
     items = get_price_list_for_worker(callback.from_user.id)
@@ -409,10 +438,9 @@ async def show_category_or_work(callback, state, chosen_date):
         buttons.append([InlineKeyboardButton(text="🔙 К датам", callback_data="wdate_back")])
         buttons.append([InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")])
         await callback.message.edit_text(
-            f"📅 **Дата: {date_str}**\n"
-            f"📋 {worker_cats[0][2]} **{worker_cats[0][1]}**\n\n"
+            f"📅 Дата: {date_str}\n"
+            f"📋 {worker_cats[0][2]} {worker_cats[0][1]}\n\n"
             f"Выберите работу:",
-            parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
         )
         await state.set_state(WorkEntry.choosing_work)
@@ -427,9 +455,8 @@ async def show_category_or_work(callback, state, chosen_date):
         buttons.append([InlineKeyboardButton(text="🔙 К датам", callback_data="wdate_back")])
         buttons.append([InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")])
         await callback.message.edit_text(
-            f"📅 **Дата: {date_str}**\n\n"
+            f"📅 Дата: {date_str}\n\n"
             f"📂 Выберите категорию работ:",
-            parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
         )
         await state.set_state(WorkEntry.choosing_category)
@@ -479,14 +506,14 @@ async def work_category_chosen(callback: types.CallbackQuery, state: FSMContext)
     buttons.append([InlineKeyboardButton(text="🔙 К категориям", callback_data="wcat_back")])
     buttons.append([InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")])
     await callback.message.edit_text(
-        f"📅 **Дата: {date_str}**\n"
-        f"{cat_info[1]} **{cat_info[0]}**\n\n"
+        f"📅 Дата: {date_str}\n"
+        f"{cat_info[1]} {cat_info[0]}\n\n"
         f"Выберите работу:",
-        parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
     )
     await state.set_state(WorkEntry.choosing_work)
     await callback.answer()
+
 
 @dp.callback_query(F.data == "wcat_back", WorkEntry.choosing_work)
 async def work_back_to_categories(callback: types.CallbackQuery, state: FSMContext):
@@ -505,9 +532,8 @@ async def work_back_to_categories(callback: types.CallbackQuery, state: FSMConte
     buttons.append([InlineKeyboardButton(text="🔙 К датам", callback_data="wdate_back")])
     buttons.append([InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")])
     await callback.message.edit_text(
-        f"📅 **Дата: {date_str}**\n\n"
+        f"📅 Дата: {date_str}\n\n"
         f"📂 Выберите категорию работ:",
-        parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
     )
     await state.set_state(WorkEntry.choosing_category)
@@ -527,10 +553,9 @@ async def work_chosen(callback: types.CallbackQuery, state: FSMContext):
     d = data["work_date"].split("-")
     date_str = f"{d[2]}.{d[1]}.{d[0]}"
     await callback.message.edit_text(
-        f"📅 **Дата: {date_str}**\n"
-        f"**{info[1]}** ({int(info[2])} ₽/шт)\n\n"
-        f"Введите количество:",
-        parse_mode="Markdown"
+        f"📅 Дата: {date_str}\n"
+        f"{info[1]} ({int(info[2])} руб/шт)\n\n"
+        f"Введите количество:"
     )
     await state.set_state(WorkEntry.entering_quantity)
     await callback.answer()
@@ -561,11 +586,10 @@ async def quantity_entered(message: types.Message, state: FSMContext):
         d = work_date.split("-")
         date_str = f"{d[2]}.{d[1]}.{d[0]}"
         await message.answer(
-            f"⚠️ **Внимание! Большая сумма!**\n\n"
-            f"📅 Дата: **{date_str}**\n"
-            f"📦 {info['name']} × {qty} = **{int(total)} ₽**\n\n"
+            f"⚠️ Внимание! Большая сумма!\n\n"
+            f"📅 Дата: {date_str}\n"
+            f"📦 {info['name']} x {qty} = {int(total)} руб\n\n"
             f"Всё верно?",
-            parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
         )
         await state.set_state(WorkEntry.confirming_large)
@@ -583,10 +607,7 @@ async def confirm_large_entry(callback: types.CallbackQuery, state: FSMContext):
         await callback.message.delete()
         await save_work_entry(callback.message, state, qty, user=callback.from_user)
     elif action == "edit":
-        await callback.message.edit_text(
-            "Введите **правильное** количество:",
-            parse_mode="Markdown"
-        )
+        await callback.message.edit_text("Введите правильное количество:")
         await state.set_state(WorkEntry.entering_quantity)
     elif action == "cancel":
         await callback.message.edit_text("❌ Отменено.")
@@ -610,30 +631,29 @@ async def save_work_entry(message, state, qty, user=None):
     date_str = f"{d[2]}.{d[1]}.{d[0]}"
 
     await message.answer(
-        f"✅ **Записано!**\n\n"
-        f"📅 Дата: **{date_str}**\n"
-        f"📦 {info['name']} × {qty} = **{int(total)} ₽**\n"
-        f"💰 За этот день: **{int(day_total)} ₽**",
-        parse_mode="Markdown",
+        f"✅ Записано!\n\n"
+        f"📅 Дата: {date_str}\n"
+        f"📦 {info['name']} x {qty} = {int(total)} руб\n"
+        f"💰 За этот день: {int(day_total)} руб",
         reply_markup=get_main_keyboard(user.id)
     )
 
     if user.id != ADMIN_ID:
         notify_text = (
-            f"📬 **Новая запись!**\n\n"
+            f"📬 Новая запись!\n\n"
             f"👤 {user.full_name}\n"
             f"📅 {date_str}\n"
-            f"📦 {info['name']} × {qty} = **{int(total)} ₽**\n"
-            f"💰 За этот день: **{int(day_total)} ₽**"
+            f"📦 {info['name']} x {qty} = {int(total)} руб\n"
+            f"💰 За этот день: {int(day_total)} руб"
         )
         try:
-            await bot.send_message(ADMIN_ID, notify_text, parse_mode="Markdown")
+            await bot.send_message(ADMIN_ID, notify_text)
         except Exception as e:
             logging.error(f"Notify admin: {e}")
 
         if MANAGER_ID:
             try:
-                await bot.send_message(MANAGER_ID, notify_text, parse_mode="Markdown")
+                await bot.send_message(MANAGER_ID, notify_text)
             except Exception as e:
                 logging.error(f"Notify manager: {e}")
 
@@ -651,6 +671,7 @@ async def cancel_action(callback: types.CallbackQuery, state: FSMContext):
 
 @dp.message(F.text == "📋 Мои записи")
 async def my_entries(message: types.Message, state: FSMContext):
+    await state.clear()
     today = date.today()
     yesterday = today - timedelta(days=1)
 
@@ -681,9 +702,8 @@ async def view_date_chosen(callback: types.CallbackQuery, state: FSMContext):
     value = callback.data.split(":", 1)[1]
     if value == "custom":
         await callback.message.edit_text(
-            "📅 Введите дату в формате **ДД.ММ.ГГГГ**\n\n"
-            "Например: `25.05.2025`",
-            parse_mode="Markdown"
+            "📅 Введите дату в формате ДД.ММ.ГГГГ\n\n"
+            "Например: 25.05.2025"
         )
         await state.set_state(ViewEntries.entering_custom_date)
         await callback.answer()
@@ -704,9 +724,8 @@ async def view_custom_date(message: types.Message, state: FSMContext):
     except (ValueError, IndexError):
         await message.answer(
             "❌ Неверный формат!\n"
-            "Введите дату как **ДД.ММ.ГГГГ**\n"
-            "Например: `25.05.2025`",
-            parse_mode="Markdown"
+            "Введите дату как ДД.ММ.ГГГГ\n"
+            "Например: 25.05.2025"
         )
         return
     await show_entries_for_date(message, state,
@@ -719,42 +738,42 @@ async def show_entries_for_date(message, state, user_id, target_date, edit=False
     date_str = f"{d[2]}.{d[1]}.{d[0]}"
 
     if not entries:
-        text = f"📭 Нет записей за **{date_str}**"
+        text = f"📭 Нет записей за {date_str}"
         buttons = [[InlineKeyboardButton(text="🔙 Назад", callback_data="view_back")]]
         if edit:
-            await message.edit_text(text, parse_mode="Markdown",
+            await message.edit_text(text,
                                      reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
         else:
-            await message.answer(text, parse_mode="Markdown",
+            await message.answer(text,
                                   reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
         await state.set_state(WorkerDeleteEntry.choosing_entry)
         return
 
-    text = f"📋 **Записи за {date_str}:**\n\n"
+    text = f"📋 Записи за {date_str}:\n\n"
     buttons = []
     day_total = 0
 
     for entry_id, name, cat_name, cat_emoji, qty, price, total, created in entries:
         time_str = created[11:16] if len(created) > 16 else ""
-        text += f"{cat_emoji} {name} × {int(qty)} = **{int(total)}₽** ({time_str})\n"
+        text += f"{cat_emoji} {name} x {int(qty)} = {int(total)} руб ({time_str})\n"
         day_total += total
         if target_date == date.today().isoformat():
             buttons.append([InlineKeyboardButton(
-                text=f"❌ {name} × {int(qty)} ({int(total)}₽)",
+                text=f"❌ {name} x {int(qty)} ({int(total)} руб)",
                 callback_data=f"mydel:{entry_id}"
             )])
 
-    text += f"\n💰 **Итого: {int(day_total)}₽**"
+    text += f"\n💰 Итого: {int(day_total)} руб"
     if target_date == date.today().isoformat() and buttons:
         text += "\n\nНажмите чтобы удалить:"
 
     buttons.append([InlineKeyboardButton(text="🔙 Назад", callback_data="view_back")])
 
     if edit:
-        await message.edit_text(text, parse_mode="Markdown",
+        await message.edit_text(text,
                                  reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
     else:
-        await message.answer(text, parse_mode="Markdown",
+        await message.answer(text,
                               reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
     await state.set_state(WorkerDeleteEntry.choosing_entry)
 
@@ -805,8 +824,7 @@ async def my_entry_chosen(callback: types.CallbackQuery, state: FSMContext):
         [InlineKeyboardButton(text="❌ Отмена", callback_data="myconf:no")]
     ]
     await callback.message.edit_text(
-        f"⚠️ **Удалить?**\n\n📦 {entry[1]} × {int(entry[2])} = **{int(entry[4])}₽**",
-        parse_mode="Markdown",
+        f"⚠️ Удалить?\n\n📦 {entry[1]} x {int(entry[2])} = {int(entry[4])} руб",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
     )
     await state.set_state(WorkerDeleteEntry.confirming)
@@ -819,7 +837,7 @@ async def my_entry_confirm(callback: types.CallbackQuery, state: FSMContext):
         data = await state.get_data()
         delete_entry_by_id(data["entry_id"])
         await callback.message.edit_text(
-            f"✅ Удалено: {data['entry_name']} × {int(data['entry_qty'])}")
+            f"✅ Удалено: {data['entry_name']} x {int(data['entry_qty'])}")
     else:
         await callback.message.edit_text("❌ Отменено.")
     await state.clear()
@@ -836,24 +854,26 @@ async def my_entries_back(callback: types.CallbackQuery, state: FSMContext):
 # ==================== ЗАРАБОТОК ====================
 
 @dp.message(F.text == "💰 За сегодня")
-async def show_daily(message: types.Message):
+async def show_daily(message: types.Message, state: FSMContext):
+    await state.clear()
     rows = get_daily_total(message.from_user.id)
     if not rows:
         await message.answer("📭 Сегодня нет записей.")
         return
     all_items = get_price_list()
     names = {i[0]: i[1] for i in all_items}
-    text = f"📊 **{date.today().strftime('%d.%m.%Y')}:**\n\n"
+    text = f"📊 {date.today().strftime('%d.%m.%Y')}:\n\n"
     total = 0
     for code, qty, price, sub in rows:
-        text += f"▫️ {names.get(code, code)}: {int(qty)}шт × {int(price)}₽ = **{int(sub)}₽**\n"
+        text += f"▫️ {names.get(code, code)}: {int(qty)}шт x {int(price)} руб = {int(sub)} руб\n"
         total += sub
-    text += f"\n💰 **Итого: {int(total)} ₽**"
-    await message.answer(text, parse_mode="Markdown")
+    text += f"\n💰 Итого: {int(total)} руб"
+    await message.answer(text)
 
 
 @dp.message(F.text == "📊 За месяц")
-async def show_monthly(message: types.Message):
+async def show_monthly(message: types.Message, state: FSMContext):
+    await state.clear()
     today = date.today()
     rows = get_monthly_by_days(message.from_user.id, today.year, today.month)
     if not rows:
@@ -861,7 +881,7 @@ async def show_monthly(message: types.Message):
         return
     MONTHS = ["", "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
               "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"]
-    text = f"📊 **{MONTHS[today.month]} {today.year}:**\n\n"
+    text = f"📊 {MONTHS[today.month]} {today.year}:\n\n"
     current_date = ""
     day_total = 0
     grand_total = 0
@@ -869,21 +889,21 @@ async def show_monthly(message: types.Message):
     for work_date, name, qty, price, subtotal in rows:
         if work_date != current_date:
             if current_date != "":
-                text += f"   💰 За день: **{int(day_total)}₽**\n\n"
+                text += f"   💰 За день: {int(day_total)} руб\n\n"
             parts = work_date.split("-")
-            text += f"📅 **{parts[2]}.{parts[1]}.{parts[0]}:**\n"
+            text += f"📅 {parts[2]}.{parts[1]}.{parts[0]}:\n"
             current_date = work_date
             day_total = 0
             work_days += 1
-        text += f"   ▫️ {name} × {int(qty)} = **{int(subtotal)}₽**\n"
+        text += f"   ▫️ {name} x {int(qty)} = {int(subtotal)} руб\n"
         day_total += subtotal
         grand_total += subtotal
     if current_date != "":
-        text += f"   💰 За день: **{int(day_total)}₽**\n"
+        text += f"   💰 За день: {int(day_total)} руб\n"
     text += f"\n━━━━━━━━━━━━━━━━━━━\n"
-    text += f"📊 Рабочих дней: **{work_days}**\n"
-    text += f"💰 Итого за месяц: **{int(grand_total)} ₽**"
-    await send_long_message(message, text)
+    text += f"📊 Рабочих дней: {work_days}\n"
+    text += f"💰 Итого за месяц: {int(grand_total)} руб"
+    await send_long_message(message, text, parse_mode=None)
 
 
 # ==================== НАВИГАЦИЯ ====================
@@ -895,48 +915,51 @@ async def admin_panel(message: types.Message, state: FSMContext):
         return
     await state.clear()
     await message.answer(
-        "👑 **Админ-панель**\n\n"
+        "👑 Админ-панель\n\n"
         "📋 — Сводки и отчёты\n"
         "➕ — Добавить данные\n"
         "✏️ — Редактировать\n"
         "🗑 — Удалить\n"
         "📂 — Справочники\n"
         "💰 — Деньги и авансы",
-        parse_mode="Markdown",
         reply_markup=get_admin_keyboard()
     )
+
+@dp.message(F.text == "📊 Панель отчётов")
+async def manager_panel(message: types.Message, state: FSMContext):
+    if not is_manager(message.from_user.id):
+        await message.answer("⛔ Нет доступа.")
+        return
+    await state.clear()
+    await message.answer("📊 Панель отчётов", reply_markup=get_manager_keyboard())
 
 @dp.message(F.text == "➕ Добавить")
 async def menu_add(message: types.Message, state: FSMContext):
     if not is_admin(message.from_user.id):
         return
     await state.clear()
-    await message.answer("➕ **Добавить:**", parse_mode="Markdown",
-                         reply_markup=get_add_keyboard())
+    await message.answer("➕ Добавить:", reply_markup=get_add_keyboard())
 
 @dp.message(F.text == "✏️ Редактировать")
 async def menu_edit(message: types.Message, state: FSMContext):
     if not is_admin(message.from_user.id):
         return
     await state.clear()
-    await message.answer("✏️ **Редактировать:**", parse_mode="Markdown",
-                         reply_markup=get_edit_keyboard())
+    await message.answer("✏️ Редактировать:", reply_markup=get_edit_keyboard())
 
 @dp.message(F.text == "🗑 Удалить")
 async def menu_delete(message: types.Message, state: FSMContext):
     if not is_admin(message.from_user.id):
         return
     await state.clear()
-    await message.answer("🗑 **Удалить:**", parse_mode="Markdown",
-                         reply_markup=get_delete_keyboard())
+    await message.answer("🗑 Удалить:", reply_markup=get_delete_keyboard())
 
 @dp.message(F.text == "📂 Справочники")
 async def menu_info(message: types.Message, state: FSMContext):
     if not is_staff(message.from_user.id):
         return
     await state.clear()
-    await message.answer("📂 **Справочники:**", parse_mode="Markdown",
-                         reply_markup=get_info_keyboard())
+    await message.answer("📂 Справочники:", reply_markup=get_info_keyboard())
 
 @dp.message(F.text == "💰 Деньги")
 async def menu_money(message: types.Message, state: FSMContext):
@@ -944,12 +967,11 @@ async def menu_money(message: types.Message, state: FSMContext):
         return
     await state.clear()
     await message.answer(
-        "💰 **Раздел «Деньги»**\n\n"
+        "💰 Раздел Деньги\n\n"
         "💳 — Авансы\n"
         "💰 — Баланс\n"
         "📊 — Заработок\n"
         "🏆 — Рейтинг",
-        parse_mode="Markdown",
         reply_markup=get_money_keyboard()
     )
 
@@ -967,12 +989,14 @@ async def back_to_main(message: types.Message, state: FSMContext):
     await message.answer("Главное меню",
                          reply_markup=get_main_keyboard(message.from_user.id))
 
+
 # ==================== КАТЕГОРИИ ====================
 
 @dp.message(F.text == "➕ Категория")
 async def add_cat_start(message: types.Message, state: FSMContext):
     if not is_admin(message.from_user.id):
         return
+    await state.clear()
     await message.answer("Код категории (латиницей):")
     await state.set_state(AdminAddCategory.entering_code)
 
@@ -996,27 +1020,28 @@ async def add_cat_emoji(message: types.Message, state: FSMContext):
     data = await state.get_data()
     add_category(data["code"], data["name"], emoji)
     await message.answer(
-        f"✅ {emoji} **{data['name']}** (`{data['code']}`)",
-        parse_mode="Markdown", reply_markup=get_add_keyboard()
+        f"✅ {emoji} {data['name']} ({data['code']})",
+        reply_markup=get_add_keyboard()
     )
     await state.clear()
 
 @dp.message(F.text == "📂 Категории")
-async def show_cats(message: types.Message):
+async def show_cats(message: types.Message, state: FSMContext):
     if not is_staff(message.from_user.id):
         return
+    await state.clear()
     cats = get_categories()
     if not cats:
         await message.answer("📂 Пусто.")
         return
-    text = "📂 **Категории:**\n\n"
+    text = "📂 Категории:\n\n"
     for code, name, emoji in cats:
         workers = get_workers_in_category(code)
         w_str = ", ".join([w[1] for w in workers]) if workers else "—"
         items = [i for i in get_price_list() if i[3] == code]
-        i_str = ", ".join([f"{i[1]}({int(i[2])}₽)" for i in items]) if items else "—"
-        text += f"{emoji} **{name}** (`{code}`)\n👥 {w_str}\n📋 {i_str}\n\n"
-    await send_long_message(message, text)
+        i_str = ", ".join([f"{i[1]}({int(i[2])} руб)" for i in items]) if items else "—"
+        text += f"{emoji} {name} ({code})\n👥 {w_str}\n📋 {i_str}\n\n"
+    await send_long_message(message, text, parse_mode=None)
 
 
 # ==================== ВИД РАБОТЫ ====================
@@ -1025,6 +1050,7 @@ async def show_cats(message: types.Message):
 async def add_work_start(message: types.Message, state: FSMContext):
     if not is_admin(message.from_user.id):
         return
+    await state.clear()
     cats = get_categories()
     if not cats:
         await message.answer("⚠️ Сначала создайте категорию!")
@@ -1064,8 +1090,8 @@ async def add_work_price(message: types.Message, state: FSMContext):
     data = await state.get_data()
     add_price_item(data["code"], data["name"], price, data["category_code"])
     await message.answer(
-        f"✅ `{data['code']}` — {data['name']} — {int(price)}₽",
-        parse_mode="Markdown", reply_markup=get_add_keyboard()
+        f"✅ {data['code']} — {data['name']} — {int(price)} руб",
+        reply_markup=get_add_keyboard()
     )
     await state.clear()
 
@@ -1076,6 +1102,7 @@ async def add_work_price(message: types.Message, state: FSMContext):
 async def add_worker_start(message: types.Message, state: FSMContext):
     if not is_admin(message.from_user.id):
         return
+    await state.clear()
     await message.answer("Telegram ID (@userinfobot):")
     await state.set_state(AdminAddWorker.entering_id)
 
@@ -1095,9 +1122,9 @@ async def add_worker_name(message: types.Message, state: FSMContext):
     data = await state.get_data()
     add_worker(data["worker_id"], message.text.strip())
     await message.answer(
-        f"✅ **{message.text.strip()}** (`{data['worker_id']}`)\n"
+        f"✅ {message.text.strip()} ({data['worker_id']})\n"
         f"Назначьте категории: ✏️ Редактировать → 🔗",
-        parse_mode="Markdown", reply_markup=get_add_keyboard()
+        reply_markup=get_add_keyboard()
     )
     await state.clear()
 
@@ -1105,36 +1132,38 @@ async def add_worker_name(message: types.Message, state: FSMContext):
 # ==================== СПИСКИ ====================
 
 @dp.message(F.text == "👥 Работники")
-async def show_workers(message: types.Message):
+async def show_workers(message: types.Message, state: FSMContext):
     if not is_staff(message.from_user.id):
         return
+    await state.clear()
     workers = get_all_workers()
     if not workers:
         await message.answer("👥 Пусто.")
         return
-    text = "👥 **Работники:**\n\n"
+    text = "👥 Работники:\n\n"
     for tid, name in workers:
         cats = get_worker_categories(tid)
-        c_str = ", ".join([f"{c[2]}{c[1]}" for c in cats]) if cats else "❌ нет кат."
-        text += f"▫️ **{name}** (`{tid}`)\n   {c_str}\n\n"
-    await send_long_message(message, text)
+        c_str = ", ".join([f"{c[2]}{c[1]}" for c in cats]) if cats else "нет кат."
+        text += f"▫️ {name} ({tid})\n   {c_str}\n\n"
+    await send_long_message(message, text, parse_mode=None)
 
 @dp.message(F.text == "📄 Прайс-лист")
-async def show_pricelist(message: types.Message):
+async def show_pricelist(message: types.Message, state: FSMContext):
     if not is_staff(message.from_user.id):
         return
+    await state.clear()
     items = get_price_list()
     if not items:
         await message.answer("📄 Пусто.")
         return
-    text = "📄 **Прайс-лист:**\n\n"
+    text = "📄 Прайс-лист:\n\n"
     cur = ""
     for code, name, price, cat_code, cat_name, cat_emoji in items:
         if cat_code != cur:
             cur = cat_code
-            text += f"\n{cat_emoji} **{cat_name}:**\n"
-        text += f"   ▫️ `{code}` — {name}: **{int(price)}₽**\n"
-    await send_long_message(message, text)
+            text += f"\n{cat_emoji} {cat_name}:\n"
+        text += f"   ▫️ {code} — {name}: {int(price)} руб\n"
+    await send_long_message(message, text, parse_mode=None)
 
 
 # ==================== НАЗНАЧИТЬ / УБРАТЬ ====================
@@ -1143,6 +1172,7 @@ async def show_pricelist(message: types.Message):
 async def assign_start(message: types.Message, state: FSMContext):
     if not is_admin(message.from_user.id):
         return
+    await state.clear()
     workers = get_all_workers()
     if not workers:
         await message.answer("⚠️ Нет работников.")
@@ -1179,7 +1209,7 @@ async def assign_done(callback: types.CallbackQuery, state: FSMContext):
     assign_category_to_worker(data["worker_id"], cat)
     w = next((n for t, n in get_all_workers() if t == data["worker_id"]), "?")
     c = next((f"{e}{n}" for co, n, e in get_categories() if co == cat), "?")
-    await callback.message.edit_text(f"✅ {w} → {c}")
+    await callback.message.edit_text(f"✅ {w} -> {c}")
     await state.clear()
     await callback.answer()
 
@@ -1187,6 +1217,7 @@ async def assign_done(callback: types.CallbackQuery, state: FSMContext):
 async def rmcat_start(message: types.Message, state: FSMContext):
     if not is_admin(message.from_user.id):
         return
+    await state.clear()
     buttons = []
     for tid, name in get_all_workers():
         cats = get_worker_categories(tid)
@@ -1224,11 +1255,12 @@ async def rmcat_done(callback: types.CallbackQuery, state: FSMContext):
 async def edit_price_start(message: types.Message, state: FSMContext):
     if not is_admin(message.from_user.id):
         return
+    await state.clear()
     items = get_price_list()
     if not items:
         await message.answer("⚠️ Пусто.")
         return
-    buttons = [[InlineKeyboardButton(text=f"{ce} {n} — {int(p)}₽", callback_data=f"ep:{c}")] for c, n, p, cc, cn, ce in items]
+    buttons = [[InlineKeyboardButton(text=f"{ce} {n} — {int(p)} руб", callback_data=f"ep:{c}")] for c, n, p, cc, cn, ce in items]
     await message.answer("Позиция:", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
     await state.set_state(AdminEditPrice.choosing_item)
 
@@ -1250,8 +1282,7 @@ async def edit_price_done(message: types.Message, state: FSMContext):
         return
     data = await state.get_data()
     update_price(data["code"], p)
-    await message.answer(f"✅ Расценка: **{int(p)}₽**",
-                         parse_mode="Markdown", reply_markup=get_edit_keyboard())
+    await message.answer(f"✅ Расценка: {int(p)} руб", reply_markup=get_edit_keyboard())
     await state.clear()
 
 
@@ -1261,6 +1292,7 @@ async def edit_price_done(message: types.Message, state: FSMContext):
 async def del_cat_start(message: types.Message, state: FSMContext):
     if not is_admin(message.from_user.id):
         return
+    await state.clear()
     cats = get_categories()
     if not cats:
         await message.answer("📂 Пусто.")
@@ -1283,9 +1315,9 @@ async def del_cat_chosen(callback: types.CallbackQuery, state: FSMContext):
         [InlineKeyboardButton(text="✅ Да!", callback_data="cdc:yes")],
         [InlineKeyboardButton(text="❌ Нет", callback_data="cdc:no")]
     ]
-    await callback.message.edit_text(f"⚠️ Удалить {info[2]} **{info[1]}**?",
-                                      parse_mode="Markdown",
-                                      reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+    await callback.message.edit_text(
+        f"⚠️ Удалить {info[2]} {info[1]}?",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
     await state.set_state(AdminDeleteCategory.confirming)
     await callback.answer()
 
@@ -1304,11 +1336,12 @@ async def del_cat_confirm(callback: types.CallbackQuery, state: FSMContext):
 async def del_work_start(message: types.Message, state: FSMContext):
     if not is_admin(message.from_user.id):
         return
+    await state.clear()
     items = get_price_list()
     if not items:
         await message.answer("📄 Пусто.")
         return
-    buttons = [[InlineKeyboardButton(text=f"{ce} {n} — {int(p)}₽", callback_data=f"dw:{c}")] for c, n, p, cc, cn, ce in items]
+    buttons = [[InlineKeyboardButton(text=f"{ce} {n} — {int(p)} руб", callback_data=f"dw:{c}")] for c, n, p, cc, cn, ce in items]
     buttons.append([InlineKeyboardButton(text="❌ Отмена", callback_data="cdel")])
     await message.answer("Удалить:", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
     await state.set_state(AdminDeleteWork.choosing)
@@ -1326,9 +1359,9 @@ async def del_work_chosen(callback: types.CallbackQuery, state: FSMContext):
         [InlineKeyboardButton(text="✅ Да!", callback_data="cdw:yes")],
         [InlineKeyboardButton(text="❌ Нет", callback_data="cdw:no")]
     ]
-    await callback.message.edit_text(f"⚠️ Удалить **{info[1]}** ({int(info[2])}₽)?",
-                                      parse_mode="Markdown",
-                                      reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+    await callback.message.edit_text(
+        f"⚠️ Удалить {info[1]} ({int(info[2])} руб)?",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
     await state.set_state(AdminDeleteWork.confirming)
     await callback.answer()
 
@@ -1337,8 +1370,8 @@ async def del_work_confirm(callback: types.CallbackQuery, state: FSMContext):
     if callback.data.split(":")[1] == "yes":
         data = await state.get_data()
         full = delete_price_item_permanently(data["code"])
-        msg = f"✅ **{data['name']}** удалён!" if full else f"✅ **{data['name']}** скрыт."
-        await callback.message.edit_text(msg, parse_mode="Markdown")
+        msg = f"✅ {data['name']} удалён!" if full else f"✅ {data['name']} скрыт."
+        await callback.message.edit_text(msg)
     else:
         await callback.message.edit_text("❌ Отменено.")
     await state.clear()
@@ -1348,6 +1381,7 @@ async def del_work_confirm(callback: types.CallbackQuery, state: FSMContext):
 async def del_worker_start(message: types.Message, state: FSMContext):
     if not is_admin(message.from_user.id):
         return
+    await state.clear()
     buttons = []
     for tid, name in get_all_workers():
         if tid == ADMIN_ID:
@@ -1369,9 +1403,9 @@ async def del_worker_chosen(callback: types.CallbackQuery, state: FSMContext):
         [InlineKeyboardButton(text="✅ Да!", callback_data="cdwk:yes")],
         [InlineKeyboardButton(text="❌ Нет", callback_data="cdwk:no")]
     ]
-    await callback.message.edit_text(f"⚠️ Удалить **{name}**?",
-                                      parse_mode="Markdown",
-                                      reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+    await callback.message.edit_text(
+        f"⚠️ Удалить {name}?",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
     await state.set_state(AdminDeleteWorker.confirming)
     await callback.answer()
 
@@ -1380,8 +1414,7 @@ async def del_worker_confirm(callback: types.CallbackQuery, state: FSMContext):
     if callback.data.split(":")[1] == "yes":
         data = await state.get_data()
         delete_worker(data["worker_id"])
-        await callback.message.edit_text(f"✅ **{data['worker_name']}** удалён!",
-                                          parse_mode="Markdown")
+        await callback.message.edit_text(f"✅ {data['worker_name']} удалён!")
     else:
         await callback.message.edit_text("❌ Отменено.")
     await state.clear()
@@ -1397,25 +1430,27 @@ async def cancel_del(callback: types.CallbackQuery, state: FSMContext):
 # ==================== СВОДКИ ====================
 
 @dp.message(F.text == "📋 Сводка день")
-async def summary_day(message: types.Message):
+async def summary_day(message: types.Message, state: FSMContext):
     if not is_staff(message.from_user.id):
         return
+    await state.clear()
     summary = get_all_workers_daily_summary()
-    text = f"📋 **{date.today().strftime('%d.%m.%Y')}:**\n\n"
+    text = f"📋 {date.today().strftime('%d.%m.%Y')}:\n\n"
     total = 0
     for tid, name, dt in summary:
         cats = get_worker_categories(tid)
         ce = "".join([c[2] for c in cats]) if cats else ""
         icon = '✅' if dt > 0 else '❌'
-        text += f"{icon} {ce}{name}: **{int(dt)}₽**\n"
+        text += f"{icon} {ce}{name}: {int(dt)} руб\n"
         total += dt
-    text += f"\n💰 **Итого: {int(total)}₽**"
-    await message.answer(text, parse_mode="Markdown")
+    text += f"\n💰 Итого: {int(total)} руб"
+    await message.answer(text)
 
 @dp.message(F.text == "📋 Сводка месяц")
-async def summary_month(message: types.Message):
+async def summary_month(message: types.Message, state: FSMContext):
     if not is_staff(message.from_user.id):
         return
+    await state.clear()
     today = date.today()
     MONTHS = ["", "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
               "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"]
@@ -1424,7 +1459,7 @@ async def summary_month(message: types.Message):
         await message.answer("📭 Нет данных за этот месяц.")
         return
 
-    text = f"📊 **{MONTHS[today.month].upper()} {today.year} — ПОЛНЫЙ ОТЧЁТ**\n\n"
+    text = f"📊 {MONTHS[today.month].upper()} {today.year} — ПОЛНЫЙ ОТЧЁТ\n\n"
     current_worker = None
     current_category = None
     current_date = None
@@ -1437,12 +1472,12 @@ async def summary_month(message: types.Message):
     for tid, wname, cname, cemoji, wdate, pname, qty, price, total in details:
         if wname != current_worker:
             if current_date is not None:
-                text += f"            💰 День: **{int(day_total)}₽**\n"
+                text += f"            💰 День: {int(day_total)} руб\n"
             if current_category is not None:
-                text += f"      📊 Категория: **{int(cat_total)}₽**\n"
+                text += f"      📊 Категория: {int(cat_total)} руб\n"
             if current_worker is not None:
                 text += f"   ━━━━━━━━━━━━━━\n"
-                text += f"   📊 Дней: **{len(worker_days)}** | 💰 Итого: **{int(worker_total)}₽**\n\n"
+                text += f"   📊 Дней: {len(worker_days)} | 💰 Итого: {int(worker_total)} руб\n\n"
                 grand_total += worker_total
             current_worker = wname
             current_category = None
@@ -1453,45 +1488,45 @@ async def summary_month(message: types.Message):
             worker_days = set()
             cats = get_worker_categories(tid)
             ce = "".join([c[2] for c in cats]) if cats else ""
-            text += f"👤 **{wname}** {ce}\n"
+            text += f"👤 {wname} {ce}\n"
 
         if cname != current_category:
             if current_date is not None:
-                text += f"            💰 День: **{int(day_total)}₽**\n"
+                text += f"            💰 День: {int(day_total)} руб\n"
                 day_total = 0
             if current_category is not None:
-                text += f"      📊 Категория: **{int(cat_total)}₽**\n\n"
+                text += f"      📊 Категория: {int(cat_total)} руб\n\n"
             current_category = cname
             current_date = None
             cat_total = 0
-            text += f"   {cemoji} **{cname}:**\n"
+            text += f"   {cemoji} {cname}:\n"
 
         if wdate != current_date:
             if current_date is not None:
-                text += f"            💰 День: **{int(day_total)}₽**\n"
+                text += f"            💰 День: {int(day_total)} руб\n"
             dd = wdate.split("-")
             text += f"      📅 {dd[2]}.{dd[1]}:\n"
             current_date = wdate
             day_total = 0
             worker_days.add(wdate)
 
-        text += f"         ▫️ {pname}: {int(qty)} × {int(price)} = **{int(total)}₽**\n"
+        text += f"         ▫️ {pname}: {int(qty)} x {int(price)} = {int(total)} руб\n"
         worker_total += total
         cat_total += total
         day_total += total
 
     if current_date is not None:
-        text += f"            💰 День: **{int(day_total)}₽**\n"
+        text += f"            💰 День: {int(day_total)} руб\n"
     if current_category is not None:
-        text += f"      📊 Категория: **{int(cat_total)}₽**\n"
+        text += f"      📊 Категория: {int(cat_total)} руб\n"
     if current_worker is not None:
         text += f"   ━━━━━━━━━━━━━━\n"
-        text += f"   📊 Дней: **{len(worker_days)}** | 💰 Итого: **{int(worker_total)}₽**\n\n"
+        text += f"   📊 Дней: {len(worker_days)} | 💰 Итого: {int(worker_total)} руб\n\n"
         grand_total += worker_total
 
     text += f"━━━━━━━━━━━━━━━━━━━\n"
-    text += f"💰 **ОБЩИЙ ФОНД: {int(grand_total)} ₽**"
-    await send_long_message(message, text)
+    text += f"💰 ОБЩИЙ ФОНД: {int(grand_total)} руб"
+    await send_long_message(message, text, parse_mode=None)
 
 
 # ==================== ЗАПИСИ РАБОТНИКОВ ====================
@@ -1500,6 +1535,7 @@ async def summary_month(message: types.Message):
 async def admin_entries_start(message: types.Message, state: FSMContext):
     if not is_admin(message.from_user.id):
         return
+    await state.clear()
     workers = get_all_workers()
     if not workers:
         await message.answer("⚠️ Нет работников.")
@@ -1519,22 +1555,21 @@ async def admin_entries_worker(callback: types.CallbackQuery, state: FSMContext)
         await state.clear()
         await callback.answer()
         return
-    text = f"📋 **{wname}:**\n\n"
+    text = f"📋 {wname}:\n\n"
     buttons = []
     current_date = ""
     for eid, name, qty, price, total, wdate, created in entries:
         if wdate != current_date:
             parts = wdate.split("-")
-            text += f"\n📅 **{parts[2]}.{parts[1]}.{parts[0]}:**\n"
+            text += f"\n📅 {parts[2]}.{parts[1]}.{parts[0]}:\n"
             current_date = wdate
-        text += f"   🔹 {name} × {int(qty)} = {int(total)}₽\n"
+        text += f"   🔹 {name} x {int(qty)} = {int(total)} руб\n"
         buttons.append([InlineKeyboardButton(
-            text=f"📦 {name}×{int(qty)}={int(total)}₽ ({wdate})",
+            text=f"📦 {name}x{int(qty)}={int(total)}руб ({wdate})",
             callback_data=f"ae_e:{eid}"
         )])
     buttons.append([InlineKeyboardButton(text="🔙 Назад", callback_data="ae_back")])
     await callback.message.edit_text(text + "\n\nВыберите запись:",
-                                      parse_mode="Markdown",
                                       reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
     await state.set_state(AdminManageEntries.viewing_entries)
     await callback.answer()
@@ -1554,13 +1589,12 @@ async def admin_entry_chosen(callback: types.CallbackQuery, state: FSMContext):
         [InlineKeyboardButton(text="🔙 Назад", callback_data="ae_act:back")]
     ]
     await callback.message.edit_text(
-        f"📦 **{entry[1]}**\n\n"
+        f"📦 {entry[1]}\n\n"
         f"👤 {entry[7]}\n"
         f"📅 {parts[2]}.{parts[1]}.{parts[0]}\n"
-        f"🔢 Кол-во: **{int(entry[2])}** шт\n"
-        f"💵 Расценка: {int(entry[3])} ₽\n"
-        f"💰 Сумма: **{int(entry[4])} ₽**",
-        parse_mode="Markdown",
+        f"🔢 Кол-во: {int(entry[2])} шт\n"
+        f"💵 Расценка: {int(entry[3])} руб\n"
+        f"💰 Сумма: {int(entry[4])} руб",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
     )
     await state.set_state(AdminManageEntries.choosing_action)
@@ -1570,7 +1604,7 @@ async def admin_entry_chosen(callback: types.CallbackQuery, state: FSMContext):
 async def admin_entry_action(callback: types.CallbackQuery, state: FSMContext):
     action = callback.data.split(":")[1]
     if action == "edit":
-        await callback.message.edit_text("Введите **правильное** количество:", parse_mode="Markdown")
+        await callback.message.edit_text("Введите правильное количество:")
         await state.set_state(AdminManageEntries.entering_new_quantity)
         await callback.answer()
     elif action == "delete":
@@ -1581,7 +1615,7 @@ async def admin_entry_action(callback: types.CallbackQuery, state: FSMContext):
             [InlineKeyboardButton(text="❌ Нет", callback_data="ae_del:no")]
         ]
         await callback.message.edit_text(
-            f"⚠️ Удалить?\n📦 {entry[1]} × {int(entry[2])} = {int(entry[4])}₽",
+            f"⚠️ Удалить?\n📦 {entry[1]} x {int(entry[2])} = {int(entry[4])} руб",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
         )
         await state.set_state(AdminManageEntries.confirming_delete)
@@ -1589,21 +1623,21 @@ async def admin_entry_action(callback: types.CallbackQuery, state: FSMContext):
     elif action == "back":
         data = await state.get_data()
         entries = get_worker_recent_entries(data["worker_id"], limit=20)
-        text = f"📋 **{data['worker_name']}:**\n\n"
+        text = f"📋 {data['worker_name']}:\n\n"
         buttons = []
         current_date = ""
         for eid, name, qty, price, total, wdate, created in entries:
             if wdate != current_date:
                 parts = wdate.split("-")
-                text += f"\n📅 **{parts[2]}.{parts[1]}.{parts[0]}:**\n"
+                text += f"\n📅 {parts[2]}.{parts[1]}.{parts[0]}:\n"
                 current_date = wdate
-            text += f"   🔹 {name} × {int(qty)} = {int(total)}₽\n"
+            text += f"   🔹 {name} x {int(qty)} = {int(total)} руб\n"
             buttons.append([InlineKeyboardButton(
-                text=f"📦 {name}×{int(qty)}={int(total)}₽",
+                text=f"📦 {name}x{int(qty)}={int(total)}руб",
                 callback_data=f"ae_e:{eid}"
             )])
         buttons.append([InlineKeyboardButton(text="🔙 Назад", callback_data="ae_back")])
-        await callback.message.edit_text(text + "\n\nВыберите:", parse_mode="Markdown",
+        await callback.message.edit_text(text + "\n\nВыберите:",
                                           reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
         await state.set_state(AdminManageEntries.viewing_entries)
         await callback.answer()
@@ -1628,10 +1662,10 @@ async def admin_entry_new_qty(message: types.Message, state: FSMContext):
     new_total = new_qty * entry[3]
     update_entry_quantity(data["entry_id"], new_qty)
     await message.answer(
-        f"✅ **Изменено!**\n\n📦 {entry[1]} ({entry[7]})\n"
-        f"Было: {int(old_qty)}шт = {int(old_total)}₽\n"
-        f"Стало: {new_qty}шт = **{int(new_total)}₽**",
-        parse_mode="Markdown", reply_markup=get_edit_keyboard()
+        f"✅ Изменено!\n\n📦 {entry[1]} ({entry[7]})\n"
+        f"Было: {int(old_qty)}шт = {int(old_total)} руб\n"
+        f"Стало: {new_qty}шт = {int(new_total)} руб",
+        reply_markup=get_edit_keyboard()
     )
     await state.clear()
 
@@ -1642,7 +1676,7 @@ async def admin_entry_delete_confirm(callback: types.CallbackQuery, state: FSMCo
         deleted = delete_entry_by_id(data["entry_id"])
         if deleted:
             await callback.message.edit_text(
-                f"✅ Удалено: {deleted[1]} × {int(deleted[2])} = {int(deleted[3])}₽")
+                f"✅ Удалено: {deleted[1]} x {int(deleted[2])} = {int(deleted[3])} руб")
         else:
             await callback.message.edit_text("❌ Не найдена.")
     else:
@@ -1663,6 +1697,7 @@ async def admin_entries_back(callback: types.CallbackQuery, state: FSMContext):
 async def advance_start(message: types.Message, state: FSMContext):
     if not is_admin(message.from_user.id):
         return
+    await state.clear()
     workers = get_all_workers()
     if not workers:
         await message.answer("⚠️ Нет работников.")
@@ -1672,7 +1707,7 @@ async def advance_start(message: types.Message, state: FSMContext):
     for tid, name in workers:
         adv_total = get_worker_advances_total(tid, today.year, today.month)
         buttons.append([InlineKeyboardButton(
-            text=f"👤 {name} (аванс: {int(adv_total)}₽)",
+            text=f"👤 {name} (аванс: {int(adv_total)} руб)",
             callback_data=f"adv_w:{tid}"
         )])
     buttons.append([InlineKeyboardButton(text="❌ Отмена", callback_data="cdel")])
@@ -1693,12 +1728,11 @@ async def advance_worker_chosen(callback: types.CallbackQuery, state: FSMContext
     balance = earned - adv_total
     await state.update_data(worker_id=wid, worker_name=wname)
     await callback.message.edit_text(
-        f"👤 **{wname}**\n\n"
-        f"💰 Заработано: **{int(earned)}₽**\n"
-        f"💳 Авансы: **{int(adv_total)}₽**\n"
-        f"📊 Остаток: **{int(balance)}₽**\n\n"
-        f"Введите сумму аванса:",
-        parse_mode="Markdown"
+        f"👤 {wname}\n\n"
+        f"💰 Заработано: {int(earned)} руб\n"
+        f"💳 Авансы: {int(adv_total)} руб\n"
+        f"📊 Остаток: {int(balance)} руб\n\n"
+        f"Введите сумму аванса:"
     )
     await state.set_state(AdminAdvance.entering_amount)
     await callback.answer()
@@ -1714,9 +1748,8 @@ async def advance_amount(message: types.Message, state: FSMContext):
         return
     await state.update_data(amount=amount)
     await message.answer(
-        f"💳 Сумма: **{int(amount)}₽**\n\n"
-        f"Введите комментарий (или `-` чтобы пропустить):",
-        parse_mode="Markdown"
+        f"💳 Сумма: {int(amount)} руб\n\n"
+        f"Введите комментарий (или - чтобы пропустить):"
     )
     await state.set_state(AdminAdvance.entering_comment)
 
@@ -1735,25 +1768,26 @@ async def advance_comment(message: types.Message, state: FSMContext):
     adv_total = get_worker_advances_total(data["worker_id"], today.year, today.month)
     balance = earned - adv_total
     text = (
-        f"✅ **Аванс выдан!**\n\n"
+        f"✅ Аванс выдан!\n\n"
         f"👤 {data['worker_name']}\n"
-        f"💳 Сумма: **{int(data['amount'])}₽**\n"
+        f"💳 Сумма: {int(data['amount'])} руб\n"
     )
     if comment:
         text += f"💬 {comment}\n"
     text += (
-        f"\n📊 **Баланс:**\n"
-        f"💰 Заработано: {int(earned)}₽\n"
-        f"💳 Авансы: {int(adv_total)}₽\n"
-        f"📊 Остаток: **{int(balance)}₽**"
+        f"\n📊 Баланс:\n"
+        f"💰 Заработано: {int(earned)} руб\n"
+        f"💳 Авансы: {int(adv_total)} руб\n"
+        f"📊 Остаток: {int(balance)} руб"
     )
-    await message.answer(text, parse_mode="Markdown", reply_markup=get_money_keyboard())
+    await message.answer(text, reply_markup=get_money_keyboard())
     await state.clear()
 
 @dp.message(F.text == "💳 Удалить аванс")
 async def delete_advance_start(message: types.Message, state: FSMContext):
     if not is_admin(message.from_user.id):
         return
+    await state.clear()
     workers = get_all_workers()
     buttons = []
     today = date.today()
@@ -1762,7 +1796,7 @@ async def delete_advance_start(message: types.Message, state: FSMContext):
         if advances:
             total = sum(a[1] for a in advances)
             buttons.append([InlineKeyboardButton(
-                text=f"👤 {name} ({int(total)}₽, {len(advances)} шт)",
+                text=f"👤 {name} ({int(total)} руб, {len(advances)} шт)",
                 callback_data=f"dadv_w:{tid}"
             )])
     if not buttons:
@@ -1783,7 +1817,7 @@ async def del_advance_worker(callback: types.CallbackQuery, state: FSMContext):
     buttons = []
     for adv_id, amount, comment, adv_date, created in advances:
         d = adv_date.split("-")
-        label = f"{d[2]}.{d[1]} — {int(amount)}₽"
+        label = f"{d[2]}.{d[1]} — {int(amount)} руб"
         if comment:
             label += f" ({comment[:20]})"
         buttons.append([InlineKeyboardButton(
@@ -1792,8 +1826,7 @@ async def del_advance_worker(callback: types.CallbackQuery, state: FSMContext):
         )])
     buttons.append([InlineKeyboardButton(text="🔙 Назад", callback_data="cdel")])
     await callback.message.edit_text(
-        f"👤 **{wname}** — авансы:\n\nВыберите для удаления:",
-        parse_mode="Markdown",
+        f"👤 {wname} — авансы:\n\nВыберите для удаления:",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
     )
     await state.set_state(AdminDeleteAdvance.choosing_advance)
@@ -1820,7 +1853,7 @@ async def del_advance_confirm(callback: types.CallbackQuery, state: FSMContext):
         data = await state.get_data()
         deleted = delete_advance(data["advance_id"])
         if deleted:
-            await callback.message.edit_text(f"✅ Аванс {int(deleted[1])}₽ удалён!")
+            await callback.message.edit_text(f"✅ Аванс {int(deleted[1])} руб удалён!")
         else:
             await callback.message.edit_text("❌ Не найден.")
     else:
@@ -1829,13 +1862,14 @@ async def del_advance_confirm(callback: types.CallbackQuery, state: FSMContext):
     await callback.answer()
 
 @dp.message(F.text == "💰 Баланс работников")
-async def show_balances(message: types.Message):
+async def show_balances(message: types.Message, state: FSMContext):
     if not is_staff(message.from_user.id):
         return
+    await state.clear()
     today = date.today()
     MONTHS = ["", "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
               "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"]
-    text = f"💰 **Баланс — {MONTHS[today.month]} {today.year}**\n\n"
+    text = f"💰 Баланс — {MONTHS[today.month]} {today.year}\n\n"
     workers = get_all_workers()
     grand_earned = 0
     grand_advance = 0
@@ -1849,31 +1883,32 @@ async def show_balances(message: types.Message):
         if earned > 0 or adv_total > 0:
             icon = "✅" if balance >= 0 else "⚠️"
             text += (
-                f"{icon} **{name}**\n"
-                f"   💰 Заработано: {int(earned)}₽\n"
-                f"   💳 Авансы: {int(adv_total)}₽\n"
-                f"   📊 Остаток: **{int(balance)}₽**\n\n"
+                f"{icon} {name}\n"
+                f"   💰 Заработано: {int(earned)} руб\n"
+                f"   💳 Авансы: {int(adv_total)} руб\n"
+                f"   📊 Остаток: {int(balance)} руб\n\n"
             )
             grand_earned += earned
             grand_advance += adv_total
     text += f"━━━━━━━━━━━━━━━━━━━\n"
-    text += f"💰 Всего заработано: **{int(grand_earned)}₽**\n"
-    text += f"💳 Всего авансов: **{int(grand_advance)}₽**\n"
-    text += f"📊 Общий остаток: **{int(grand_earned - grand_advance)}₽**"
-    await send_long_message(message, text)
+    text += f"💰 Всего заработано: {int(grand_earned)} руб\n"
+    text += f"💳 Всего авансов: {int(grand_advance)} руб\n"
+    text += f"📊 Общий остаток: {int(grand_earned - grand_advance)} руб"
+    await send_long_message(message, text, parse_mode=None)
 
 
 # ==================== ЗАРАБОТОК ЗА МЕСЯЦ ====================
 
 @dp.message(F.text == "📊 Заработок за месяц")
-async def earnings_month(message: types.Message):
+async def earnings_month(message: types.Message, state: FSMContext):
     if not is_admin(message.from_user.id):
         return
+    await state.clear()
     today = date.today()
     MONTHS = ["", "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
               "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"]
 
-    text = f"📊 **Заработок — {MONTHS[today.month]} {today.year}**\n\n"
+    text = f"📊 Заработок — {MONTHS[today.month]} {today.year}\n\n"
     workers = get_all_workers()
     grand_total = 0
 
@@ -1883,48 +1918,52 @@ async def earnings_month(message: types.Message):
         monthly = get_monthly_total(tid, today.year, today.month)
         for _, _, _, sub in monthly:
             earned += sub
-        if earned > 0:
-            worker_data.append((tid, name, earned))
-            grand_total += earned
+        worker_data.append((tid, name, earned))
+        grand_total += earned
 
     if not worker_data:
-        await message.answer("📭 Нет данных за этот месяц.")
+        await message.answer("📭 Нет работников.")
         return
 
     for tid, name, earned in worker_data:
-        details = get_worker_monthly_details(tid, today.year, today.month)
         cats = get_worker_categories(tid)
         ce = "".join([c[2] for c in cats]) if cats else ""
 
-        text += f"👤 **{name}** {ce}\n"
+        if earned > 0:
+            details = get_worker_monthly_details(tid, today.year, today.month)
+            text += f"👤 {name} {ce}\n"
 
-        current_cat = ""
-        for pl_name, c_emoji, c_name, qty, price, total in details:
-            if c_name != current_cat:
-                current_cat = c_name
-                text += f"   {c_emoji} *{c_name}:*\n"
-            text += f"      ▫️ {pl_name}: {int(qty)}шт × {int(price)}₽ = **{int(total)}₽**\n"
+            current_cat = ""
+            for pl_name, c_emoji, c_name, qty, price, total in details:
+                if c_name != current_cat:
+                    current_cat = c_name
+                    text += f"   {c_emoji} {c_name}:\n"
+                text += f"      ▫️ {pl_name}: {int(qty)}шт x {int(price)} руб = {int(total)} руб\n"
 
-        text += f"   💰 **Итого: {int(earned)}₽**\n\n"
+            text += f"   💰 Итого: {int(earned)} руб\n\n"
+        else:
+            text += f"❌ {name} {ce} — нет записей\n\n"
 
     text += f"━━━━━━━━━━━━━━━━━━━\n"
-    text += f"💰 **ОБЩИЙ ФОНД: {int(grand_total)}₽**"
+    text += f"💰 ОБЩИЙ ФОНД: {int(grand_total)} руб"
 
-    await send_long_message(message, text)
+    await send_long_message(message, text, parse_mode=None)
 
 
 # ==================== РЕЙТИНГ РАБОТНИКОВ ====================
 
 @dp.message(F.text == "🏆 Рейтинг работников")
-async def workers_rating(message: types.Message):
+async def workers_rating(message: types.Message, state: FSMContext):
     if not is_admin(message.from_user.id):
         return
+    await state.clear()
     today = date.today()
     MONTHS = ["", "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
               "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"]
 
     workers = get_all_workers()
     worker_stats = []
+    no_records = []
 
     for tid, name in workers:
         earned = 0
@@ -1938,49 +1977,59 @@ async def workers_rating(message: types.Message):
         if earned > 0:
             avg_per_day = earned / work_days if work_days > 0 else 0
             worker_stats.append((tid, name, earned, work_days, avg_per_day))
+        else:
+            no_records.append((tid, name))
 
-    if not worker_stats:
+    if not worker_stats and not no_records:
         await message.answer("📭 Нет данных за этот месяц.")
         return
 
-    # Рейтинг по заработку
-    worker_stats.sort(key=lambda x: x[2], reverse=True)
     medals = ["🥇", "🥈", "🥉"]
 
-    text = f"🏆 **Рейтинг — {MONTHS[today.month]} {today.year}**\n\n"
-    text += f"**📊 По заработку:**\n\n"
+    text = f"🏆 Рейтинг — {MONTHS[today.month]} {today.year}\n\n"
 
-    for i, (tid, name, earned, days, avg) in enumerate(worker_stats):
-        medal = medals[i] if i < 3 else f"  {i+1}."
-        adv_total = get_worker_advances_total(tid, today.year, today.month)
-        balance = earned - adv_total
+    if worker_stats:
+        # Рейтинг по заработку
+        worker_stats.sort(key=lambda x: x[2], reverse=True)
+        text += f"📊 По заработку:\n\n"
 
-        text += (
-            f"{medal} **{name}**\n"
-            f"   💰 Заработок: **{int(earned)}₽**\n"
-            f"   📅 Дней: {days}\n"
-            f"   📊 Среднее/день: **{int(avg)}₽**\n"
-            f"   💳 Авансы: {int(adv_total)}₽\n"
-            f"   📊 Остаток: **{int(balance)}₽**\n\n"
-        )
+        for i, (tid, name, earned, days, avg) in enumerate(worker_stats):
+            medal = medals[i] if i < 3 else f"  {i+1}."
+            adv_total = get_worker_advances_total(tid, today.year, today.month)
+            balance = earned - adv_total
 
-    # Рейтинг по среднему за день
-    worker_stats.sort(key=lambda x: x[4], reverse=True)
-    text += f"\n**📊 По среднему за день:**\n\n"
+            text += (
+                f"{medal} {name}\n"
+                f"   💰 Заработок: {int(earned)} руб\n"
+                f"   📅 Дней: {days}\n"
+                f"   📊 Среднее/день: {int(avg)} руб\n"
+                f"   💳 Авансы: {int(adv_total)} руб\n"
+                f"   📊 Остаток: {int(balance)} руб\n\n"
+            )
 
-    for i, (tid, name, earned, days, avg) in enumerate(worker_stats):
-        medal = medals[i] if i < 3 else f"  {i+1}."
-        text += f"{medal} **{name}** — **{int(avg)}₽**/день ({days} дн.)\n"
+        # Рейтинг по среднему за день
+        worker_stats.sort(key=lambda x: x[4], reverse=True)
+        text += f"\n📊 По среднему за день:\n\n"
 
-    await send_long_message(message, text)
+        for i, (tid, name, earned, days, avg) in enumerate(worker_stats):
+            medal = medals[i] if i < 3 else f"  {i+1}."
+            text += f"{medal} {name} — {int(avg)} руб/день ({days} дн.)\n"
+
+    if no_records:
+        text += f"\n\n❌ Без записей:\n"
+        for tid, name in no_records:
+            text += f"   ▫️ {name}\n"
+
+    await send_long_message(message, text, parse_mode=None)
 
 
 # ==================== EXCEL ОТЧЁТЫ ====================
 
 @dp.message(F.text == "📥 Отчёт месяц")
-async def report_month(message: types.Message):
+async def report_month(message: types.Message, state: FSMContext):
     if not is_staff(message.from_user.id):
         return
+    await state.clear()
     await message.answer("⏳ Формирую...")
     try:
         today = date.today()
@@ -1994,6 +2043,7 @@ async def report_month(message: types.Message):
 async def report_worker_start(message: types.Message, state: FSMContext):
     if not is_staff(message.from_user.id):
         return
+    await state.clear()
     workers = get_all_workers()
     if not workers:
         await message.answer("⚠️ Нет работников.")
@@ -2021,9 +2071,10 @@ async def report_worker_gen(callback: types.CallbackQuery, state: FSMContext):
 # ==================== БЭКАП ====================
 
 @dp.message(F.text == "💾 Бэкап БД")
-async def manual_backup(message: types.Message):
+async def manual_backup(message: types.Message, state: FSMContext):
     if not is_admin(message.from_user.id):
         return
+    await state.clear()
     await send_backup(message.from_user.id)
 
 async def send_backup(chat_id=None):
@@ -2032,10 +2083,8 @@ async def send_backup(chat_id=None):
 
     from database import DB_NAME
 
-    # Проверяем несколько возможных путей
     possible_paths = [
-        DB_NAME,  # путь из database.py (production.db)
-        os.path.join(os.getenv("RAILWAY_VOLUME_MOUNT_PATH", "."), DB_NAME),
+        DB_NAME,
         os.path.join(os.getenv("RAILWAY_VOLUME_MOUNT_PATH", "."), "production.db"),
         "production.db",
         os.path.abspath(DB_NAME),
@@ -2049,7 +2098,6 @@ async def send_backup(chat_id=None):
 
     if db_path is None:
         try:
-            # Показываем отладочную информацию
             cwd = os.getcwd()
             files = os.listdir(cwd)
             vol_path = os.getenv("RAILWAY_VOLUME_MOUNT_PATH", "не задан")
@@ -2059,13 +2107,13 @@ async def send_backup(chat_id=None):
 
             debug_text = (
                 f"❌ База данных не найдена!\n\n"
-                f"📁 Рабочая папка: `{cwd}`\n"
-                f"📄 Файлы: {files}\n\n"
-                f"📁 Volume: `{vol_path}`\n"
-                f"📄 Файлы: {vol_files}\n\n"
-                f"🔍 DB_NAME: `{DB_NAME}`"
+                f"Рабочая папка: {cwd}\n"
+                f"Файлы: {files}\n\n"
+                f"Volume: {vol_path}\n"
+                f"Файлы: {vol_files}\n\n"
+                f"DB_NAME: {DB_NAME}"
             )
-            await bot.send_message(chat_id, debug_text, parse_mode="Markdown")
+            await bot.send_message(chat_id, debug_text)
         except Exception as e:
             await bot.send_message(chat_id, f"❌ База не найдена. Ошибка: {e}")
         return
@@ -2108,15 +2156,15 @@ async def send_late_reminder():
 
 async def send_admin_report():
     summary = get_all_workers_daily_summary()
-    text = f"📊 **Итоги {date.today().strftime('%d.%m.%Y')}:**\n\n"
+    text = f"📊 Итоги {date.today().strftime('%d.%m.%Y')}:\n\n"
     total = 0
     for tid, name, dt in summary:
         icon = '✅' if dt > 0 else '❌'
-        text += f"{icon} {name}: {int(dt)}₽\n"
+        text += f"{icon} {name}: {int(dt)} руб\n"
         total += dt
-    text += f"\n💰 Итого: {int(total)}₽"
+    text += f"\n💰 Итого: {int(total)} руб"
     try:
-        await bot.send_message(ADMIN_ID, text, parse_mode="Markdown")
+        await bot.send_message(ADMIN_ID, text)
     except Exception as e:
         logging.error(f"Admin report: {e}")
 
