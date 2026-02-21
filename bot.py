@@ -158,7 +158,8 @@ def get_admin_keyboard():
          KeyboardButton(text="✏️ Редактировать")],
         [KeyboardButton(text="🗑 Удалить"),
          KeyboardButton(text="📂 Справочники")],
-        [KeyboardButton(text="💾 Бэкап БД")],
+        [KeyboardButton(text="💰 Деньги"),
+         KeyboardButton(text="💾 Бэкап БД")],
         [KeyboardButton(text="🔙 Назад")],
     ]
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
@@ -178,9 +179,6 @@ def get_edit_keyboard():
          KeyboardButton(text="🔓 Убрать кат.")],
         [KeyboardButton(text="✏️ Расценка")],
         [KeyboardButton(text="🔧 Записи работников")],
-        [KeyboardButton(text="💳 Выдать аванс"),
-         KeyboardButton(text="💳 Удалить аванс")],
-        [KeyboardButton(text="💰 Баланс работников")],
         [KeyboardButton(text="🔙 В админ-панель")],
     ]
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
@@ -199,6 +197,17 @@ def get_info_keyboard():
         [KeyboardButton(text="📂 Категории")],
         [KeyboardButton(text="📄 Прайс-лист")],
         [KeyboardButton(text="👥 Работники")],
+        [KeyboardButton(text="🔙 В админ-панель")],
+    ]
+    return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
+
+def get_money_keyboard():
+    buttons = [
+        [KeyboardButton(text="💳 Выдать аванс"),
+         KeyboardButton(text="💳 Удалить аванс")],
+        [KeyboardButton(text="💰 Баланс работников")],
+        [KeyboardButton(text="📊 Заработок за месяц")],
+        [KeyboardButton(text="🏆 Рейтинг работников")],
         [KeyboardButton(text="🔙 В админ-панель")],
     ]
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
@@ -907,7 +916,8 @@ async def admin_panel(message: types.Message):
         "➕ — Добавить данные\n"
         "✏️ — Редактировать\n"
         "🗑 — Удалить\n"
-        "📂 — Справочники",
+        "📂 — Справочники\n"
+        "💰 — Деньги и авансы",
         parse_mode="Markdown",
         reply_markup=get_admin_keyboard()
     )
@@ -946,6 +956,20 @@ async def menu_info(message: types.Message):
         return
     await message.answer("📂 **Справочники:**", parse_mode="Markdown",
                          reply_markup=get_info_keyboard())
+
+@dp.message(F.text == "💰 Деньги")
+async def menu_money(message: types.Message):
+    if not is_admin(message.from_user.id):
+        return
+    await message.answer(
+        "💰 **Раздел «Деньги»**\n\n"
+        "💳 — Авансы\n"
+        "💰 — Баланс\n"
+        "📊 — Заработок\n"
+        "🏆 — Рейтинг",
+        parse_mode="Markdown",
+        reply_markup=get_money_keyboard()
+    )
 
 @dp.message(F.text == "🔙 В админ-панель")
 async def back_to_admin(message: types.Message):
@@ -1663,8 +1687,6 @@ async def advance_start(message: types.Message, state: FSMContext):
     buttons = []
     today = date.today()
     for tid, name in workers:
-        if tid == ADMIN_ID:
-            continue
         adv_total = get_worker_advances_total(tid, today.year, today.month)
         buttons.append([InlineKeyboardButton(
             text=f"👤 {name} (аванс: {int(adv_total)}₽)",
@@ -1742,7 +1764,7 @@ async def advance_comment(message: types.Message, state: FSMContext):
         f"💳 Авансы: {int(adv_total)}₽\n"
         f"📊 Остаток: **{int(balance)}₽**"
     )
-    await message.answer(text, parse_mode="Markdown", reply_markup=get_edit_keyboard())
+    await message.answer(text, parse_mode="Markdown", reply_markup=get_money_keyboard())
     await state.clear()
 
 @dp.message(F.text == "💳 Удалить аванс")
@@ -1753,8 +1775,6 @@ async def delete_advance_start(message: types.Message, state: FSMContext):
     buttons = []
     today = date.today()
     for tid, name in workers:
-        if tid == ADMIN_ID:
-            continue
         advances = get_worker_advances(tid, today.year, today.month)
         if advances:
             total = sum(a[1] for a in advances)
@@ -1860,6 +1880,118 @@ async def show_balances(message: types.Message):
     await send_long_message(message, text)
 
 
+# ==================== ЗАРАБОТОК ЗА МЕСЯЦ ====================
+
+@dp.message(F.text == "📊 Заработок за месяц")
+async def earnings_month(message: types.Message):
+    if not is_admin(message.from_user.id):
+        return
+    today = date.today()
+    MONTHS = ["", "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
+              "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"]
+
+    text = f"📊 **Заработок — {MONTHS[today.month]} {today.year}**\n\n"
+    workers = get_all_workers()
+    grand_total = 0
+
+    worker_data = []
+    for tid, name in workers:
+        earned = 0
+        monthly = get_monthly_total(tid, today.year, today.month)
+        for _, _, _, sub in monthly:
+            earned += sub
+        if earned > 0:
+            worker_data.append((tid, name, earned))
+            grand_total += earned
+
+    if not worker_data:
+        await message.answer("📭 Нет данных за этот месяц.")
+        return
+
+    for tid, name, earned in worker_data:
+        details = get_worker_monthly_details(tid, today.year, today.month)
+        cats = get_worker_categories(tid)
+        ce = "".join([c[2] for c in cats]) if cats else ""
+
+        text += f"👤 **{name}** {ce}\n"
+
+        current_cat = ""
+        for pl_name, c_emoji, c_name, qty, price, total in details:
+            if c_name != current_cat:
+                current_cat = c_name
+                text += f"   {c_emoji} *{c_name}:*\n"
+            text += f"      ▫️ {pl_name}: {int(qty)}шт × {int(price)}₽ = **{int(total)}₽**\n"
+
+        text += f"   💰 **Итого: {int(earned)}₽**\n\n"
+
+    text += f"━━━━━━━━━━━━━━━━━━━\n"
+    text += f"💰 **ОБЩИЙ ФОНД: {int(grand_total)}₽**"
+
+    await send_long_message(message, text)
+
+
+# ==================== РЕЙТИНГ РАБОТНИКОВ ====================
+
+@dp.message(F.text == "🏆 Рейтинг работников")
+async def workers_rating(message: types.Message):
+    if not is_admin(message.from_user.id):
+        return
+    today = date.today()
+    MONTHS = ["", "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
+              "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"]
+
+    workers = get_all_workers()
+    worker_stats = []
+
+    for tid, name in workers:
+        earned = 0
+        monthly = get_monthly_total(tid, today.year, today.month)
+        for _, _, _, sub in monthly:
+            earned += sub
+
+        days_data = get_monthly_by_days(tid, today.year, today.month)
+        work_days = len(set(row[0] for row in days_data))
+
+        if earned > 0:
+            avg_per_day = earned / work_days if work_days > 0 else 0
+            worker_stats.append((tid, name, earned, work_days, avg_per_day))
+
+    if not worker_stats:
+        await message.answer("📭 Нет данных за этот месяц.")
+        return
+
+    # Рейтинг по заработку
+    worker_stats.sort(key=lambda x: x[2], reverse=True)
+    medals = ["🥇", "🥈", "🥉"]
+
+    text = f"🏆 **Рейтинг — {MONTHS[today.month]} {today.year}**\n\n"
+    text += f"**📊 По заработку:**\n\n"
+
+    for i, (tid, name, earned, days, avg) in enumerate(worker_stats):
+        medal = medals[i] if i < 3 else f"  {i+1}."
+        adv_total = get_worker_advances_total(tid, today.year, today.month)
+        balance = earned - adv_total
+
+        text += (
+            f"{medal} **{name}**\n"
+            f"   💰 Заработок: **{int(earned)}₽**\n"
+            f"   📅 Дней: {days}\n"
+            f"   📊 Среднее/день: **{int(avg)}₽**\n"
+            f"   💳 Авансы: {int(adv_total)}₽\n"
+            f"   📊 Остаток: **{int(balance)}₽**\n\n"
+        )
+
+    # Рейтинг по среднему за день
+    worker_stats.sort(key=lambda x: x[4], reverse=True)
+    text += f"\n**📊 По среднему за день:**\n\n"
+
+    for i, (tid, name, earned, days, avg) in enumerate(worker_stats):
+        medal = medals[i] if i < 3 else f"  {i+1}."
+        text += f"{medal} **{name}** — **{int(avg)}₽**/день ({days} дн.)\n"
+
+    await send_long_message(message, text)
+
+
 # ==================== EXCEL ОТЧЁТЫ ====================
 
 @dp.message(F.text == "📥 Отчёт месяц")
@@ -1914,23 +2046,54 @@ async def manual_backup(message: types.Message):
 async def send_backup(chat_id=None):
     if chat_id is None:
         chat_id = ADMIN_ID
-    db_path = os.path.join(
-        os.getenv("RAILWAY_VOLUME_MOUNT_PATH", "."),
-        "production.db"
-    )
-    if not os.path.exists(db_path):
+
+    from database import DB_NAME
+
+    # Проверяем несколько возможных путей
+    possible_paths = [
+        DB_NAME,  # путь из database.py (production.db)
+        os.path.join(os.getenv("RAILWAY_VOLUME_MOUNT_PATH", "."), DB_NAME),
+        os.path.join(os.getenv("RAILWAY_VOLUME_MOUNT_PATH", "."), "production.db"),
+        "production.db",
+        os.path.abspath(DB_NAME),
+    ]
+
+    db_path = None
+    for path in possible_paths:
+        if os.path.exists(path):
+            db_path = path
+            break
+
+    if db_path is None:
         try:
-            await bot.send_message(chat_id, "❌ База данных не найдена.")
-        except Exception:
-            pass
+            # Показываем отладочную информацию
+            cwd = os.getcwd()
+            files = os.listdir(cwd)
+            vol_path = os.getenv("RAILWAY_VOLUME_MOUNT_PATH", "не задан")
+            vol_files = []
+            if os.path.exists(vol_path):
+                vol_files = os.listdir(vol_path)
+
+            debug_text = (
+                f"❌ База данных не найдена!\n\n"
+                f"📁 Рабочая папка: `{cwd}`\n"
+                f"📄 Файлы: {files}\n\n"
+                f"📁 Volume: `{vol_path}`\n"
+                f"📄 Файлы: {vol_files}\n\n"
+                f"🔍 DB_NAME: `{DB_NAME}`"
+            )
+            await bot.send_message(chat_id, debug_text, parse_mode="Markdown")
+        except Exception as e:
+            await bot.send_message(chat_id, f"❌ База не найдена. Ошибка: {e}")
         return
+
     try:
         from datetime import datetime
-        today = datetime.now()
-        caption = f"💾 Бэкап БД\n📅 {today.strftime('%d.%m.%Y %H:%M')}"
+        now = datetime.now()
+        caption = f"💾 Бэкап БД\n📅 {now.strftime('%d.%m.%Y %H:%M')}\n📁 {db_path}"
         await bot.send_document(
             chat_id,
-            FSInputFile(db_path, filename=f"backup_{today.strftime('%Y%m%d_%H%M')}.db"),
+            FSInputFile(db_path, filename=f"backup_{now.strftime('%Y%m%d_%H%M')}.db"),
             caption=caption
         )
     except Exception as e:
