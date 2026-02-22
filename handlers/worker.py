@@ -1,5 +1,3 @@
-from database import DB_NAME
-
 from datetime import date, timedelta
 import logging
 
@@ -331,6 +329,171 @@ async def back_to_menu(callback: types.CallbackQuery, state: FSMContext):
     )
     await callback.answer()
 
+
+# ==================== ИМПОРТ ИЗ SQLITE ====================
+
+@router.message(F.document)
+async def import_from_sqlite(message: types.Message):
+    """Админ отправляет .db файл — бот переносит данные в PostgreSQL"""
+    if message.from_user.id != ADMIN_ID:
+        return
+    
+    if not message.document.file_name.endswith('.db'):
+        await message.answer("❌ Отправьте файл с расширением .db")
+        return
+    
+    await message.answer("⏳ Начинаю импорт данных...")
+    
+    import aiosqlite
+    import tempfile
+    import os
+    
+    try:
+        # Скачиваем файл
+        file = await bot.get_file(message.document.file_id)
+        
+        # Создаём временный файл
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.db') as tmp:
+            tmp_path = tmp.name
+        
+        await bot.download_file(file.file_path, tmp_path)
+        
+        # Подключаемся к SQLite
+        sqlite = await aiosqlite.connect(tmp_path)
+        
+        # Импортируем данные
+        from database import pool
+        
+        stats = {
+            'workers': 0,
+            'categories': 0,
+            'prices': 0,
+            'worker_cats': 0,
+            'work_logs': 0,
+            'advances': 0,
+            'penalties': 0
+        }
+        
+        async with pool.acquire() as pg:
+            # --- workers ---
+            cursor = await sqlite.execute("SELECT telegram_id, name, registered_at FROM workers")
+            rows = await cursor.fetchall()
+            for row in rows:
+                await pg.execute("""
+                    INSERT INTO workers (telegram_id, name, registered_at)
+                    VALUES ($1, $2, $3)
+                    ON CONFLICT (telegram_id) DO UPDATE SET name = $2
+                """, row[0], row[1], row[2])
+            stats['workers'] = len(rows)
+            
+            # --- categories ---
+            cursor = await sqlite.execute("SELECT code, name, emoji FROM categories")
+            rows = await cursor.fetchall()
+            for row in rows:
+                await pg.execute("""
+                    INSERT INTO categories (code, name, emoji)
+                    VALUES ($1, $2, $3)
+                    ON CONFLICT (code) DO UPDATE SET name = $2, emoji = $3
+                """, row[0], row[1], row[2])
+            stats['categories'] = len(rows)
+            
+            # --- price_list ---
+            cursor = await sqlite.execute("SELECT code, name, price, category_code, is_active FROM price_list")
+            rows = await cursor.fetchall()
+            for row in rows:
+                await pg.execute("""
+                    INSERT INTO price_list (code, name, price, category_code, is_active)
+                    VALUES ($1, $2, $3, $4, $5)
+                    ON CONFLICT (code) DO UPDATE SET name = $2, price = $3, category_code = $4, is_active = $5
+                """, row[0], row[1], row[2], row[3], bool(row[4]))
+            stats['prices'] = len(rows)
+            
+            # --- worker_categories ---
+            cursor = await sqlite.execute("SELECT worker_id, category_code FROM worker_categories")
+            rows = await cursor.fetchall()
+            for row in rows:
+                await pg.execute("""
+                    INSERT INTO worker_categories (worker_id, category_code)
+                    VALUES ($1, $2)
+                    ON CONFLICT DO NOTHING
+                """, row[0], row[1])
+            stats['worker_cats'] = len(rows)
+            
+            # --- work_log ---
+            cursor = await sqlite.execute("""
+                SELECT worker_id, work_code, quantity, price_per_unit, total, work_date, created_at
+                FROM work_log ORDER BY id
+            """)
+            rows = await cursor.fetchall()
+            for row in rows:
+                await pg.execute("""
+                    INSERT INTO work_log (worker_id, work_code, quantity, price_per_unit, total, work_date, created_at)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7)
+                """, row[0], row[1], row[2], row[3], row[4], row[5], row[6])
+            stats['work_logs'] = len(rows)
+            
+            # --- advances ---
+            cursor = await sqlite.execute("""
+                SELECT worker_id, amount, comment, advance_date, created_at
+                FROM advances ORDER BY id
+            """)
+            rows = await cursor.fetchall()
+            for row in rows:
+                await pg.execute("""
+                    INSERT INTO advances (worker_id, amount, comment, advance_date, created_at)
+                    VALUES ($1, $2, $3, $4, $5)
+                """, row[0], row[1], row[2] or '', row[3], row[4])
+            stats['advances'] = len(rows)
+            
+            # --- penalties ---
+            cursor = await sqlite.execute("""
+                SELECT worker_id, amount, reason, penalty_date, created_at
+                FROM penalties ORDER BY id
+            """)
+            rows = await cursor.fetchall()
+            for row in rows:
+                await pg.execute("""
+                    INSERT INTO penalties (worker_id, amount, reason, penalty_date, created_at)
+                    VALUES ($1, $2, $3, $4, $5)
+                """, row[0], row[1], row[2] or '', row[3], row[4])
+            stats['penalties'] = len(rows)
+            
+            # --- reminder_settings ---
+            cursor = await sqlite.execute("SELECT * FROM reminder_settings WHERE id = 1")
+            settings = await cursor.fetchone()
+            if settings:
+                await pg.execute("""
+                    INSERT INTO reminder_settings 
+                    (id, evening_hour, evening_minute, late_hour, late_minute,
+                     report_hour, report_minute, evening_enabled, late_enabled, report_enabled)
+                    VALUES (1, $1, $2, $3, $4, $5, $6, $7, $8, $9)
+                    ON CONFLICT (id) DO UPDATE SET
+                        evening_hour = $1, evening_minute = $2,
+                        late_hour = $3, late_minute = $4,
+                        report_hour = $5, report_minute = $6,
+                        evening_enabled = $7, late_enabled = $8, report_enabled = $9
+                """, settings[1], settings[2], settings[3], settings[4],
+                    settings[5], settings[6], bool(settings[7]), bool(settings[8]), bool(settings[9]))
+        
+        await sqlite.close()
+        os.unlink(tmp_path)  # Удаляем временный файл
+        
+        await message.answer(
+            f"✅ Импорт завершён!\n\n"
+            f"📊 Перенесено:\n"
+            f"👥 Работников: {stats['workers']}\n"
+            f"📂 Категорий: {stats['categories']}\n"
+            f"💰 Позиций прайса: {stats['prices']}\n"
+            f"🔗 Связей: {stats['worker_cats']}\n"
+            f"📝 Записей работ: {stats['work_logs']}\n"
+            f"💳 Авансов: {stats['advances']}\n"
+            f"⚠️ Штрафов: {stats['penalties']}"
+        )
+        
+    except Exception as e:
+        logging.error(f"Import error: {e}")
+        await message.answer(f"❌ Ошибка импорта: {e}")
+
 # ==================== МОЙ БАЛАНС ====================
 
 @router.message(F.text == "💳 Мой баланс")
@@ -598,25 +761,3 @@ async def manual_backup(message: types.Message, state: FSMContext):
     from bot import send_backup
     await send_backup(message.from_user.id)
 
-from database import DB_NAME
-
-@router.message(F.document)
-async def receive_backup(message: types.Message):
-    """Админ отправляет .db файл — бот заменяет БД"""
-    if message.from_user.id != ADMIN_ID:
-        return
-    
-    if not message.document.file_name.endswith('.db'):
-        await message.answer("❌ Отправьте файл с расширением .db")
-        return
-    
-    try:
-        file = await bot.get_file(message.document.file_id)
-        await bot.download_file(file.file_path, DB_NAME)
-        await message.answer(
-            "✅ База данных восстановлена!\n\n"
-            "Все данные загружены из бэкапа."
-        )
-    except Exception as e:
-        logging.error(f"Restore error: {e}")
-        await message.answer(f"❌ Ошибка восстановления: {e}")

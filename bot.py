@@ -1,17 +1,14 @@
 import asyncio
 import logging
-import os
 from datetime import datetime, date
 
 from aiogram import Bot, Dispatcher, types
-from aiogram.types import FSInputFile
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from config import BOT_TOKEN, ADMIN_ID
 from database import (
-    init_db, get_reminder_settings,
-    get_workers_without_records, get_all_workers_daily_summary,
-    DB_NAME
+    init_db, close_db, get_reminder_settings,
+    get_workers_without_records, get_all_workers_daily_summary
 )
 from handlers import setup_routers
 from handlers.reminders import set_scheduler
@@ -80,23 +77,6 @@ async def send_admin_report():
         logging.error(f"Admin report: {e}")
 
 
-async def send_backup(chat_id=None):
-    if chat_id is None:
-        chat_id = ADMIN_ID
-    if not os.path.exists(DB_NAME):
-        await bot.send_message(chat_id, "❌ База данных не найдена!")
-        return
-    try:
-        now = datetime.now()
-        await bot.send_document(
-            chat_id,
-            FSInputFile(DB_NAME, filename=f"backup_{now.strftime('%Y%m%d_%H%M')}.db"),
-            caption=f"💾 Бэкап БД\n📅 {now.strftime('%d.%m.%Y %H:%M')}"
-        )
-    except Exception as e:
-        logging.error(f"Backup error: {e}")
-
-
 # Safe wrappers
 async def safe_evening_reminder():
     try:
@@ -119,16 +99,9 @@ async def safe_admin_report():
         logging.exception(f"Admin report failed: {e}")
 
 
-async def safe_backup():
-    try:
-        await send_backup(ADMIN_ID)
-    except Exception as e:
-        logging.exception(f"Backup failed: {e}")
-
-
 async def reschedule_reminders():
     settings = await get_reminder_settings()
-    for job_id in ['evening_reminder', 'late_reminder', 'admin_report', 'auto_backup']:
+    for job_id in ['evening_reminder', 'late_reminder', 'admin_report']:
         try:
             scheduler.remove_job(job_id)
         except Exception:
@@ -145,14 +118,12 @@ async def reschedule_reminders():
         scheduler.add_job(safe_admin_report, "cron",
             hour=settings['report_hour'], minute=settings['report_minute'],
             id='admin_report', replace_existing=True)
-    scheduler.add_job(safe_backup, "cron", hour=23, minute=0,
-        id='auto_backup', replace_existing=True)
 
 
 # ==================== ЗАПУСК ====================
 
 async def main():
-    # Инициализация БД
+    # Инициализация БД (PostgreSQL)
     await init_db()
     
     # Подключение middleware
@@ -180,11 +151,14 @@ async def main():
         scheduler.add_job(safe_admin_report, "cron",
             hour=settings['report_hour'], minute=settings['report_minute'],
             id='admin_report')
-    scheduler.add_job(safe_backup, "cron", hour=23, minute=0, id='auto_backup')
     scheduler.start()
     
-    logging.info("Бот запущен!")
-    await dp.start_polling(bot)
+    logging.info("Бот запущен с PostgreSQL!")
+    
+    try:
+        await dp.start_polling(bot)
+    finally:
+        await close_db()
 
 
 if __name__ == "__main__":

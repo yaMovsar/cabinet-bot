@@ -1,10 +1,10 @@
-import aiosqlite
+import asyncpg
 import os
 from datetime import date, datetime
 from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
 
-from database import DB_NAME
+DATABASE_URL = os.getenv("DATABASE_URL", "")
 
 MONTHS_RU = [
     "", "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
@@ -51,7 +51,8 @@ async def generate_monthly_report(year=None, month=None):
     s = _styles()
     wb = Workbook()
 
-    async with aiosqlite.connect(DB_NAME) as db:
+    conn = await asyncpg.connect(DATABASE_URL)
+    try:
         # ===== ЛИСТ 1: СВОДКА =====
         ws = wb.active
         ws.title = "Сводка"
@@ -69,25 +70,25 @@ async def generate_monthly_report(year=None, month=None):
         for col, h in enumerate(["№", "Работник", "Категории", "Записей", "Дней", "Итого (₽)"], 1):
             _cell(ws, row, col, h, s, font=s["th_font"], fill=s["th_fill"], center=True)
 
-        cursor = await db.execute("SELECT telegram_id, name FROM workers ORDER BY name")
-        workers = await cursor.fetchall()
+        workers = await conn.fetch("SELECT telegram_id, name FROM workers ORDER BY name")
         row = 5
         grand = 0
 
-        for idx, (tid, name) in enumerate(workers, 1):
-            cat_cursor = await db.execute("""
+        for idx, worker in enumerate(workers, 1):
+            tid, name = worker['telegram_id'], worker['name']
+            
+            cats = await conn.fetch("""
                 SELECT c.emoji, c.name FROM worker_categories wc
-                JOIN categories c ON wc.category_code = c.code WHERE wc.worker_id = ?
-            """, (tid,))
-            cats = await cat_cursor.fetchall()
-            cats_str = ", ".join([f"{e}{n}" for e, n in cats]) if cats else "—"
+                JOIN categories c ON wc.category_code = c.code WHERE wc.worker_id = $1
+            """, tid)
+            cats_str = ", ".join([f"{c['emoji']}{c['name']}" for c in cats]) if cats else "—"
 
-            stat_cursor = await db.execute("""
+            stat = await conn.fetchrow("""
                 SELECT COUNT(*), COUNT(DISTINCT work_date), COALESCE(SUM(total), 0)
-                FROM work_log WHERE worker_id = ?
-                AND strftime('%Y', work_date) = ? AND strftime('%m', work_date) = ?
-            """, (tid, str(year), f"{month:02d}"))
-            cnt, days, total = await stat_cursor.fetchone()
+                FROM work_log WHERE worker_id = $1
+                AND EXTRACT(YEAR FROM work_date) = $2 AND EXTRACT(MONTH FROM work_date) = $3
+            """, tid, year, month)
+            cnt, days, total = stat[0], stat[1], stat[2]
 
             _cell(ws, row, 1, idx, s, center=True)
             _cell(ws, row, 2, name, s)
@@ -116,7 +117,9 @@ async def generate_monthly_report(year=None, month=None):
         ws2['A1'].alignment = Alignment(horizontal='center')
 
         row = 3
-        for tid, name in workers:
+        for worker in workers:
+            tid, name = worker['telegram_id'], worker['name']
+            
             ws2.merge_cells(f'A{row}:G{row}')
             cell = ws2.cell(row=row, column=1, value=f"👤 {name}")
             cell.font = Font(bold=True, size=12)
@@ -128,18 +131,17 @@ async def generate_monthly_report(year=None, month=None):
                 _cell(ws2, row, col, h, s, font=s["th_font"], fill=s["th_fill"], center=True)
             row += 1
 
-            rec_cursor = await db.execute("""
-                SELECT wl.work_date, pl.name, c.name, wl.quantity,
-                       wl.price_per_unit, wl.total, wl.created_at
+            records = await conn.fetch("""
+                SELECT wl.work_date::TEXT, pl.name, c.name, wl.quantity,
+                       wl.price_per_unit, wl.total, wl.created_at::TEXT
                 FROM work_log wl
                 JOIN price_list pl ON wl.work_code = pl.code
                 JOIN categories c ON pl.category_code = c.code
-                WHERE wl.worker_id = ?
-                  AND strftime('%Y', wl.work_date) = ?
-                  AND strftime('%m', wl.work_date) = ?
+                WHERE wl.worker_id = $1
+                  AND EXTRACT(YEAR FROM wl.work_date) = $2
+                  AND EXTRACT(MONTH FROM wl.work_date) = $3
                 ORDER BY wl.work_date, wl.created_at
-            """, (tid, str(year), f"{month:02d}"))
-            records = await rec_cursor.fetchall()
+            """, tid, year, month)
 
             wtotal = 0
             cur_date = ""
@@ -209,20 +211,20 @@ async def generate_monthly_report(year=None, month=None):
             _cell(ws3, row, col, h, s, font=s["th_font"], fill=s["th_fill"], center=True)
         row += 1
 
-        daily_cursor = await db.execute("""
-            SELECT wl.work_date, w.name, pl.name, SUM(wl.total)
+        daily = await conn.fetch("""
+            SELECT wl.work_date::TEXT, w.name, pl.name, SUM(wl.total)
             FROM work_log wl
             JOIN workers w ON wl.worker_id = w.telegram_id
             JOIN price_list pl ON wl.work_code = pl.code
-            WHERE strftime('%Y', wl.work_date) = ? AND strftime('%m', wl.work_date) = ?
+            WHERE EXTRACT(YEAR FROM wl.work_date) = $1 AND EXTRACT(MONTH FROM wl.work_date) = $2
             GROUP BY wl.work_date, w.name, pl.name
             ORDER BY wl.work_date, w.name
-        """, (str(year), f"{month:02d}"))
-        daily = await daily_cursor.fetchall()
+        """, year, month)
 
         cur_date = ""
         day_sum = 0
-        for wd, wn, wname, total in daily:
+        for rec in daily:
+            wd, wn, wname, total = rec[0], rec[1], rec[2], rec[3]
             if wd != cur_date and cur_date != "":
                 _cell(ws3, row, 1, "", s)
                 _cell(ws3, row, 2, f"Итого за {cur_date}:", s,
@@ -263,19 +265,19 @@ async def generate_monthly_report(year=None, month=None):
             _cell(ws4, row, col, h, s, font=s["th_font"], fill=s["th_fill"], center=True)
         row += 1
 
-        cat_cursor = await db.execute("""
+        cat_data = await conn.fetch("""
             SELECT c.name, pl.name, SUM(wl.quantity), wl.price_per_unit, SUM(wl.total)
             FROM work_log wl
             JOIN price_list pl ON wl.work_code = pl.code
             JOIN categories c ON pl.category_code = c.code
-            WHERE strftime('%Y', wl.work_date) = ? AND strftime('%m', wl.work_date) = ?
+            WHERE EXTRACT(YEAR FROM wl.work_date) = $1 AND EXTRACT(MONTH FROM wl.work_date) = $2
             GROUP BY c.name, pl.name, wl.price_per_unit
             ORDER BY c.name, pl.name
-        """, (str(year), f"{month:02d}"))
-        cat_data = await cat_cursor.fetchall()
+        """, year, month)
 
         cat_grand = 0
-        for cn, pn, qty, price, total in cat_data:
+        for rec in cat_data:
+            cn, pn, qty, price, total = rec[0], rec[1], rec[2], rec[3], rec[4]
             _cell(ws4, row, 1, cn, s)
             _cell(ws4, row, 2, pn, s)
             _cell(ws4, row, 3, qty, s, center=True)
@@ -292,6 +294,9 @@ async def generate_monthly_report(year=None, month=None):
 
         for col, w in zip('ABCDE', [20, 25, 12, 14, 15]):
             ws4.column_dimensions[col].width = w
+
+    finally:
+        await conn.close()
 
     filename = f"report_{year}_{month:02d}.xlsx"
     wb.save(filename)
@@ -323,24 +328,27 @@ async def generate_worker_report(worker_id, worker_name, year=None, month=None):
         _cell(ws, row, col, h, s, font=s["th_font"], fill=s["th_fill"], center=True)
     row += 1
 
-    async with aiosqlite.connect(DB_NAME) as db:
-        cursor = await db.execute("""
-            SELECT wl.work_date, c.name, pl.name, wl.quantity, wl.price_per_unit, wl.total
+    conn = await asyncpg.connect(DATABASE_URL)
+    try:
+        records = await conn.fetch("""
+            SELECT wl.work_date::TEXT, c.name, pl.name, wl.quantity, wl.price_per_unit, wl.total
             FROM work_log wl
             JOIN price_list pl ON wl.work_code = pl.code
             JOIN categories c ON pl.category_code = c.code
-            WHERE wl.worker_id = ?
-              AND strftime('%Y', wl.work_date) = ?
-              AND strftime('%m', wl.work_date) = ?
+            WHERE wl.worker_id = $1
+              AND EXTRACT(YEAR FROM wl.work_date) = $2
+              AND EXTRACT(MONTH FROM wl.work_date) = $3
             ORDER BY wl.work_date, wl.created_at
-        """, (worker_id, str(year), f"{month:02d}"))
-        records = await cursor.fetchall()
+        """, worker_id, year, month)
+    finally:
+        await conn.close()
 
     grand = 0
     cur_date = ""
     day_total = 0
 
-    for wd, cn, pn, qty, price, total in records:
+    for rec in records:
+        wd, cn, pn, qty, price, total = rec[0], rec[1], rec[2], rec[3], rec[4], rec[5]
         if wd != cur_date and cur_date != "":
             for c2 in range(1, 5):
                 _cell(ws, row, c2, "", s, fill=s["day_fill"])

@@ -12,3 +12,6 @@ for m in _managers.split(","):
     m = m.strip()
     if m and m != "0":
         MANAGER_IDS.append(int(m))
+
+# PostgreSQL
+DATABASE_URL = os.getenv("DATABASE_URL", "")
