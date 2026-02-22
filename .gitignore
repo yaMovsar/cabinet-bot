@@ -1,2 +1,7 @@
-backup_*.db 
-backup_*.db 
+venv/
+__pycache__/
+*.pyc
+.env
+*.db
+*.toml
+runtime.txt
