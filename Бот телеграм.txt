@@ -1,0 +1,46 @@
+cd C:\Users\%USERNAME%\Desktop\cabinet_bot1
+
+
+
+=== МОЙ БОТ ===
+
+GitHub: https://github.com/yaMovsar/cabinet-bot
+Railway: https://railway.app (проект cabinet-bot)
+
+Стек:
+- Python 3.11
+- aiogram 3.4.1
+- SQLite (aiosqlite)
+- APScheduler
+- openpyxl
+- Railway (хостинг + Volume)
+
+Структура:
+- bot.py — точка входа
+- database.py — база данных
+- reports.py — Excel отчёты
+- config.py — токены
+- handlers/ — обработчики
+- keyboards/ — клавиатуры
+- states/ — FSM состояния
+- middlewares/ — middleware
+- utils/ — утилиты
+
+Роли:
+- ADMIN_ID — полный доступ
+- MANAGER_IDS — отчёты и деньги
+- Остальные — работники
+
+БД на Railway Volume:
+- Path: /data
+- Файл: production.db
+
+
+
+У меня Telegram бот для учёта работ на производстве.
+Стек: Python, aiogram 3, SQLite, Railway.
+Вот ссылка на GitHub: https://github.com/yaMovsar/cabinet-bot
+
+[вставь нужные файлы]
+
+Проблема: ...

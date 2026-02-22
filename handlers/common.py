@@ -20,8 +20,6 @@ async def cmd_start(message: types.Message, state: FSMContext, is_admin: bool, i
     uid = message.from_user.id
 
     if is_admin:
-        # Добавляем только если ещё нет в базе
-        from database import worker_exists
         if not await worker_exists(uid):
             await add_worker(uid, message.from_user.full_name)
         text = (
@@ -50,7 +48,6 @@ async def cmd_start(message: types.Message, state: FSMContext, is_admin: bool, i
             "Записывайте работу каждый день!"
         )
     await message.answer(text, reply_markup=get_main_keyboard(uid))
-
 
 @router.message(Command("cancel"))
 async def cmd_cancel(message: types.Message, state: FSMContext):
