@@ -1,0 +1,610 @@
+{
+  "categories": [
+    {
+      "code": "chpu",
+      "name": "ЧПУ",
+      "emoji": "🤖"
+    },
+    {
+      "code": "malar",
+      "name": "Маляр",
+      "emoji": "🎨"
+    },
+    {
+      "code": "shlifovka",
+      "name": "Шлифовка",
+      "emoji": "🪵"
+    },
+    {
+      "code": "uvakovka_shkafi",
+      "name": "Упаковка шкафов",
+      "emoji": "📦"
+    },
+    {
+      "code": "uvakovka_dveri",
+      "name": "Упаковка Двери",
+      "emoji": "🚪"
+    },
+    {
+      "code": "bageti",
+      "name": "Багеты",
+      "emoji": "📦"
+    },
+    {
+      "code": "krovati",
+      "name": "Кровати",
+      "emoji": "🛏"
+    },
+    {
+      "code": "komodi_tumbi",
+      "name": "Комоды и тумбы",
+      "emoji": "📦"
+    },
+    {
+      "code": "rezka_karniz",
+      "name": "Резка и упаковка карнизов",
+      "emoji": "📦"
+    },
+    {
+      "code": "rezka",
+      "name": "Резка",
+      "emoji": "🪚"
+    },
+    {
+      "code": "dirki_dveri",
+      "name": "Отверстия для петель",
+      "emoji": "🕳"
+    },
+    {
+      "code": "kromka",
+      "name": "Кромка",
+      "emoji": "⚡️"
+    }
+  ],
+  "workers": [
+    {
+      "telegram_id": 741468078,
+      "name": "Movsar",
+      "registered_at": "2026-02-21T14:43:43"
+    },
+    {
+      "telegram_id": 755940234,
+      "name": "Айдамиров Бислан",
+      "registered_at": "2026-02-21T14:30:45"
+    },
+    {
+      "telegram_id": 1766500515,
+      "name": "Ruslan",
+      "registered_at": "2026-02-21T14:43:49"
+    },
+    {
+      "telegram_id": 1805718550,
+      "name": "IB RA",
+      "registered_at": "2026-02-21T14:49:27"
+    },
+    {
+      "telegram_id": 6199592085,
+      "name": "rahaa _o5",
+      "registered_at": "2026-02-21T15:10:30"
+    },
+    {
+      "telegram_id": 6259950900,
+      "name": "Арс",
+      "registered_at": "2026-02-21T15:05:20"
+    },
+    {
+      "telegram_id": 6865650357,
+      "name": "Эльмурза",
+      "registered_at": "2026-02-21T19:43:05"
+    },
+    {
+      "telegram_id": 7003154887,
+      "name": "М",
+      "registered_at": "2026-02-21T14:35:55"
+    },
+    {
+      "telegram_id": 7792815764,
+      "name": "Менеджер по продажам",
+      "registered_at": "2026-02-21T20:25:06"
+    },
+    {
+      "telegram_id": 8224128437,
+      "name": "Адлан Джанмурадов",
+      "registered_at": "2026-02-21T14:38:36"
+    },
+    {
+      "telegram_id": 8284552595,
+      "name": "ᴬᴸ",
+      "registered_at": "2026-02-21T14:56:58"
+    },
+    {
+      "telegram_id": 8340841280,
+      "name": "Па Ио",
+      "registered_at": "2026-02-21T17:36:01"
+    },
+    {
+      "telegram_id": 8552868080,
+      "name": "Zz",
+      "registered_at": "2026-02-21T16:03:15"
+    },
+    {
+      "telegram_id": 1157342359,
+      "name": "Нажмудин резка",
+      "registered_at": "2026-02-22T11:42:33.494328"
+    },
+    {
+      "telegram_id": 6778766804,
+      "name": "Хусейн - кромка",
+      "registered_at": "2026-02-21T14:27:34"
+    },
+    {
+      "telegram_id": 5469235340,
+      "name": "Абакар",
+      "registered_at": "2026-02-22T12:23:12.749467"
+    },
+    {
+      "telegram_id": 5648922189,
+      "name": "Имран шлифовка",
+      "registered_at": "2026-02-22T12:33:13.705547"
+    },
+    {
+      "telegram_id": 6933878323,
+      "name": "Амир упаковки",
+      "registered_at": "2026-02-22T12:47:08.153271"
+    },
+    {
+      "telegram_id": 5240540130,
+      "name": "Адлан упаковки",
+      "registered_at": "2026-02-22T12:52:58.563517"
+    },
+    {
+      "telegram_id": 1257501628,
+      "name": "Аюб ЧПУ",
+      "registered_at": "2026-02-22T12:56:28.388688"
+    }
+  ],
+  "price_list": [
+    {
+      "code": "mdf",
+      "name": "МДФ",
+      "price": 300.0,
+      "category_code": "chpu",
+      "is_active": true
+    },
+    {
+      "code": "lsdp",
+      "name": "ЛДСП",
+      "price": 200.0,
+      "category_code": "chpu",
+      "is_active": true
+    },
+    {
+      "code": "ldsp_rez",
+      "name": "Резной ЛДСП",
+      "price": 200.0,
+      "category_code": "chpu",
+      "is_active": true
+    },
+    {
+      "code": "antresol_6",
+      "name": "Антресоль 6",
+      "price": 150.0,
+      "category_code": "uvakovka_shkafi",
+      "is_active": true
+    },
+    {
+      "code": "antesol_4",
+      "name": "Антресоль 4",
+      "price": 100.0,
+      "category_code": "uvakovka_shkafi",
+      "is_active": true
+    },
+    {
+      "code": "premium",
+      "name": "Премиум",
+      "price": 200.0,
+      "category_code": "uvakovka_shkafi",
+      "is_active": true
+    },
+    {
+      "code": "vidvij",
+      "name": "Выдвиж. ящик",
+      "price": 100.0,
+      "category_code": "uvakovka_shkafi",
+      "is_active": true
+    },
+    {
+      "code": "dirki_20",
+      "name": "Петли - 20 -",
+      "price": 20.0,
+      "category_code": "dirki_dveri",
+      "is_active": true
+    },
+    {
+      "code": "dirki_25",
+      "name": "Петли - 25 -",
+      "price": 25.0,
+      "category_code": "dirki_dveri",
+      "is_active": true
+    },
+    {
+      "code": "dirki_30",
+      "name": "Петли - 30 -",
+      "price": 30.0,
+      "category_code": "dirki_dveri",
+      "is_active": true
+    },
+    {
+      "code": "dior_dveri",
+      "name": "Диор Двери",
+      "price": 30.0,
+      "category_code": "bageti",
+      "is_active": true
+    },
+    {
+      "code": "dior_vidvij",
+      "name": "Диор выдвиж",
+      "price": 30.0,
+      "category_code": "bageti",
+      "is_active": true
+    },
+    {
+      "code": "dior_antresol",
+      "name": "Диор Антресоль",
+      "price": 30.0,
+      "category_code": "bageti",
+      "is_active": true
+    },
+    {
+      "code": "aisha_standart",
+      "name": "Айша Стандарт",
+      "price": 50.0,
+      "category_code": "bageti",
+      "is_active": true
+    },
+    {
+      "code": "aisha_antresol",
+      "name": "Айша Антресоль",
+      "price": 50.0,
+      "category_code": "bageti",
+      "is_active": true
+    },
+    {
+      "code": "antresol_g",
+      "name": "Антресоль Г - обр.",
+      "price": 50.0,
+      "category_code": "bageti",
+      "is_active": true
+    },
+    {
+      "code": "premiun_b",
+      "name": "Премиум Бол",
+      "price": 50.0,
+      "category_code": "bageti",
+      "is_active": true
+    },
+    {
+      "code": "premium_s",
+      "name": "Премиум Сред.",
+      "price": 50.0,
+      "category_code": "bageti",
+      "is_active": true
+    },
+    {
+      "code": "premium_m",
+      "name": "Премиум мал",
+      "price": 50.0,
+      "category_code": "bageti",
+      "is_active": true
+    },
+    {
+      "code": "komod_tumbi",
+      "name": "Комод и тумбы",
+      "price": 30.0,
+      "category_code": "bageti",
+      "is_active": true
+    },
+    {
+      "code": "rezk_upakovka_karnizov",
+      "name": "Резка и упаковка карнизов",
+      "price": 50.0,
+      "category_code": "rezka_karniz",
+      "is_active": true
+    },
+    {
+      "code": "kromka_1",
+      "name": "Кромка",
+      "price": 800.0,
+      "category_code": "kromka",
+      "is_active": true
+    },
+    {
+      "code": "rezka_hdf",
+      "name": "ХДФ",
+      "price": 100.0,
+      "category_code": "rezka",
+      "is_active": true
+    },
+    {
+      "code": "rezka_mdf",
+      "name": "ЛДСП / МДФ",
+      "price": 200.0,
+      "category_code": "rezka",
+      "is_active": true
+    },
+    {
+      "code": "dveri_m",
+      "name": "Двери маленькие",
+      "price": 50.0,
+      "category_code": "uvakovka_dveri",
+      "is_active": true
+    },
+    {
+      "code": "dveri_bol",
+      "name": "Двери большие",
+      "price": 100.0,
+      "category_code": "uvakovka_dveri",
+      "is_active": true
+    },
+    {
+      "code": "shlifovka_karnizi",
+      "name": "Карнизы",
+      "price": 75.0,
+      "category_code": "shlifovka",
+      "is_active": true
+    },
+    {
+      "code": "shlifivka_planki",
+      "name": "Шлифовка планки",
+      "price": 50.0,
+      "category_code": "shlifovka",
+      "is_active": true
+    },
+    {
+      "code": "restavrazia_b",
+      "name": "Реставрация Бол",
+      "price": 100.0,
+      "category_code": "shlifovka",
+      "is_active": true
+    },
+    {
+      "code": "restavrazia_m",
+      "name": "Реставрация мал",
+      "price": 25.0,
+      "category_code": "shlifovka",
+      "is_active": true
+    },
+    {
+      "code": "ugli_b",
+      "name": "Углы бол",
+      "price": 25.0,
+      "category_code": "shlifovka",
+      "is_active": true
+    },
+    {
+      "code": "ugli_mal",
+      "name": "Углы мал",
+      "price": 15.0,
+      "category_code": "shlifovka",
+      "is_active": true
+    },
+    {
+      "code": "izolator",
+      "name": "Изолятор",
+      "price": 10.0,
+      "category_code": "shlifovka",
+      "is_active": true
+    },
+    {
+      "code": "aisha_c",
+      "name": "Айша С - обр",
+      "price": 200.0,
+      "category_code": "shlifovka",
+      "is_active": true
+    },
+    {
+      "code": "antresol",
+      "name": "Антресоль",
+      "price": 40.0,
+      "category_code": "shlifovka",
+      "is_active": true
+    },
+    {
+      "code": "aisha_g",
+      "name": "Айша Г - обр",
+      "price": 240.0,
+      "category_code": "shlifovka",
+      "is_active": true
+    },
+    {
+      "code": "dior_komplect",
+      "name": "Диор комплект",
+      "price": 320.0,
+      "category_code": "shlifovka",
+      "is_active": true
+    },
+    {
+      "code": "premium_komplect",
+      "name": "Премиум комплект",
+      "price": 1220.0,
+      "category_code": "shlifovka",
+      "is_active": true
+    },
+    {
+      "code": "premium_bol",
+      "name": "Премиум Бол",
+      "price": 225.0,
+      "category_code": "shlifovka",
+      "is_active": true
+    },
+    {
+      "code": "aisha_4",
+      "name": "Айша 4",
+      "price": 350.0,
+      "category_code": "uvakovka_shkafi",
+      "is_active": true
+    },
+    {
+      "code": "aisha_6",
+      "name": "Айша 6",
+      "price": 450.0,
+      "category_code": "uvakovka_shkafi",
+      "is_active": true
+    },
+    {
+      "code": "u_dior",
+      "name": "Диор",
+      "price": 250.0,
+      "category_code": "uvakovka_shkafi",
+      "is_active": true
+    },
+    {
+      "code": "u_aisha2",
+      "name": "Айша 2",
+      "price": 200.0,
+      "category_code": "uvakovka_shkafi",
+      "is_active": true
+    },
+    {
+      "code": "u_prixoj6",
+      "name": "Прихожая 6",
+      "price": 1.0,
+      "category_code": "uvakovka_shkafi",
+      "is_active": true
+    },
+    {
+      "code": "u_prixoj4",
+      "name": "Прихожая 4",
+      "price": 1.0,
+      "category_code": "uvakovka_shkafi",
+      "is_active": true
+    },
+    {
+      "code": "u_penalaisha",
+      "name": "Пенал Айша",
+      "price": 1.0,
+      "category_code": "uvakovka_shkafi",
+      "is_active": true
+    },
+    {
+      "code": "u_krovati",
+      "name": "Упаковка кровати",
+      "price": 20.0,
+      "category_code": "chpu",
+      "is_active": true
+    }
+  ],
+  "worker_categories": [
+    {
+      "worker_id": 741468078,
+      "category_code": "uvakovka_shkafi"
+    },
+    {
+      "worker_id": 741468078,
+      "category_code": "dirki_dveri"
+    },
+    {
+      "worker_id": 741468078,
+      "category_code": "bageti"
+    },
+    {
+      "worker_id": 6778766804,
+      "category_code": "kromka"
+    },
+    {
+      "worker_id": 1157342359,
+      "category_code": "rezka"
+    },
+    {
+      "worker_id": 8340841280,
+      "category_code": "shlifovka"
+    },
+    {
+      "worker_id": 5469235340,
+      "category_code": "rezka_karniz"
+    },
+    {
+      "worker_id": 5469235340,
+      "category_code": "bageti"
+    },
+    {
+      "worker_id": 5469235340,
+      "category_code": "uvakovka_dveri"
+    },
+    {
+      "worker_id": 5469235340,
+      "category_code": "shlifovka"
+    },
+    {
+      "worker_id": 5648922189,
+      "category_code": "shlifovka"
+    },
+    {
+      "worker_id": 6933878323,
+      "category_code": "uvakovka_shkafi"
+    },
+    {
+      "worker_id": 5240540130,
+      "category_code": "uvakovka_shkafi"
+    },
+    {
+      "worker_id": 1257501628,
+      "category_code": "chpu"
+    },
+    {
+      "worker_id": 1257501628,
+      "category_code": "dirki_dveri"
+    },
+    {
+      "worker_id": 741468078,
+      "category_code": "shlifovka"
+    }
+  ],
+  "work_log": [
+    {
+      "id": 12,
+      "worker_id": 8340841280,
+      "work_code": "aisha_c",
+      "quantity": 5,
+      "price_per_unit": 200.0,
+      "total": 1000.0,
+      "work_date": "2026-02-22",
+      "created_at": "2026-02-22T12:50:22.177222"
+    },
+    {
+      "id": 13,
+      "worker_id": 8340841280,
+      "work_code": "antresol",
+      "quantity": 2,
+      "price_per_unit": 40.0,
+      "total": 80.0,
+      "work_date": "2026-02-22",
+      "created_at": "2026-02-22T12:50:48.656609"
+    }
+  ],
+  "advances": [],
+  "penalties": [
+    {
+      "id": 1,
+      "worker_id": 6865650357,
+      "amount": 500.0,
+      "reason": "Опоздал 27.02",
+      "penalty_date": "2026-02-22",
+      "created_at": "2026-02-22T08:25:34"
+    }
+  ],
+  "reminder_settings": [
+    {
+      "id": 1,
+      "evening_hour": 18,
+      "evening_minute": 30,
+      "late_hour": 20,
+      "late_minute": 0,
+      "report_hour": 21,
+      "report_minute": 0,
+      "evening_enabled": true,
+      "late_enabled": false,
+      "report_enabled": true
+    }
+  ]
+}

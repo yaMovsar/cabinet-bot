@@ -313,12 +313,7 @@ async def save_work_entry(message, state, qty, user=None):
             await bot.send_message(ADMIN_ID, notify_text)
         except Exception as e:
             logging.error(f"Notify admin: {e}")
-        for mgr_id in MANAGER_IDS:
-            try:
-                await bot.send_message(mgr_id, notify_text)
-            except Exception as e:
-                logging.error(f"Notify manager {mgr_id}: {e}")
-
+      
     await state.clear()
 
 
