@@ -1,3 +1,5 @@
+from database import DB_NAME
+
 from datetime import date, timedelta
 import logging
 
@@ -555,3 +557,26 @@ async def manual_backup(message: types.Message, state: FSMContext):
     await state.clear()
     from bot import send_backup
     await send_backup(message.from_user.id)
+
+from database import DB_NAME
+
+@router.message(F.document)
+async def receive_backup(message: types.Message):
+    """Админ отправляет .db файл — бот заменяет БД"""
+    if message.from_user.id != ADMIN_ID:
+        return
+    
+    if not message.document.file_name.endswith('.db'):
+        await message.answer("❌ Отправьте файл с расширением .db")
+        return
+    
+    try:
+        file = await bot.get_file(message.document.file_id)
+        await bot.download_file(file.file_path, DB_NAME)
+        await message.answer(
+            "✅ База данных восстановлена!\n\n"
+            "Все данные загружены из бэкапа."
+        )
+    except Exception as e:
+        logging.error(f"Restore error: {e}")
+        await message.answer(f"❌ Ошибка восстановления: {e}")
