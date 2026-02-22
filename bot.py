@@ -225,11 +225,12 @@ async def main():
             hour=settings['report_hour'], minute=settings['report_minute'],
             id='admin_report')
     
-   # Бэкап каждые 5 часов
-        scheduler.add_job(safe_backup, "interval", hours=5, id='auto_backup_interval')
-
-   # + Бэкап в 23:00 (перед сном)
-	scheduler.add_job(safe_backup, "cron", hour=23, minute=0, id='auto_backup_night')
+    # Бэкап каждые 5 часов
+    scheduler.add_job(safe_backup, "interval", hours=5, id='auto_backup_interval')
+    
+    # Бэкап в 23:00 (перед сном)
+    scheduler.add_job(safe_backup, "cron", hour=23, minute=0, id='auto_backup_night')
+    
     scheduler.start()
     
     logging.info("Бот запущен с PostgreSQL!")
