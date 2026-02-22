@@ -273,8 +273,9 @@ async def save_work_entry(message, state, qty, user=None):
     day_total = sum(r[3] for r in daily)
 
     buttons = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📝 Записать ещё", callback_data="write_more")],
-    ])
+    [InlineKeyboardButton(text="📝 Записать ещё", callback_data="write_more")],
+    [InlineKeyboardButton(text="🏠 В меню", callback_data="back_to_menu")],
+])
 
     await message.answer(
         f"✅ Записано!\n\n"
@@ -320,6 +321,15 @@ async def write_more(callback: types.CallbackQuery, state: FSMContext):
     await state.set_state(WorkEntry.choosing_date)
     await callback.answer()
 
+@router.callback_query(F.data == "back_to_menu")
+async def back_to_menu(callback: types.CallbackQuery, state: FSMContext):
+    await state.clear()
+    await callback.message.edit_reply_markup(reply_markup=None)
+    await callback.message.answer(
+        "🏠 Главное меню",
+        reply_markup=get_main_keyboard(callback.from_user.id)
+    )
+    await callback.answer()
 
 # ==================== МОЙ БАЛАНС ====================
 
