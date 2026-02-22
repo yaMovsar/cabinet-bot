@@ -23,6 +23,24 @@ router = Router()
 bot = Bot(token=BOT_TOKEN)
 
 
+# ==================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ====================
+
+def to_date_str(value) -> str:
+    """Всегда возвращает строку формата YYYY-MM-DD"""
+    if value is None:
+        return date.today().isoformat()
+    if isinstance(value, date):
+        return value.isoformat()
+    if isinstance(value, str):
+        return value[:10]
+    return date.today().isoformat()
+
+
+def is_today(date_value) -> bool:
+    """Проверяет является ли дата сегодняшней"""
+    return to_date_str(date_value) == date.today().isoformat()
+
+
 # ==================== ЗАПИСАТЬ РАБОТУ ====================
 
 @router.message(F.text == "📝 Записать работу")
@@ -264,16 +282,16 @@ async def save_work_entry(message, state, qty, user=None):
 
     data = await state.get_data()
     info = data["work_info"]
-    work_date = data.get("work_date", date.today().isoformat())
+    work_date = to_date_str(data.get("work_date", date.today().isoformat()))
 
     total = await add_work(user.id, info["code"], qty, info["price"], work_date)
     daily = await get_daily_total(user.id, work_date)
     day_total = sum(r[3] for r in daily)
 
     buttons = InlineKeyboardMarkup(inline_keyboard=[
-    [InlineKeyboardButton(text="📝 Записать ещё", callback_data="write_more")],
-    [InlineKeyboardButton(text="🏠 В меню", callback_data="back_to_menu")],
-])
+        [InlineKeyboardButton(text="📝 Записать ещё", callback_data="write_more")],
+        [InlineKeyboardButton(text="🏠 В меню", callback_data="back_to_menu")],
+    ])
 
     await message.answer(
         f"✅ Записано!\n\n"
@@ -319,6 +337,7 @@ async def write_more(callback: types.CallbackQuery, state: FSMContext):
     await state.set_state(WorkEntry.choosing_date)
     await callback.answer()
 
+
 @router.callback_query(F.data == "back_to_menu")
 async def back_to_menu(callback: types.CallbackQuery, state: FSMContext):
     await state.clear()
@@ -337,20 +356,19 @@ async def import_from_sqlite(message: types.Message):
     """Админ отправляет .db файл — бот переносит данные в PostgreSQL"""
     if message.from_user.id != ADMIN_ID:
         return
-    
+
     if not message.document.file_name.endswith('.db'):
         await message.answer("❌ Отправьте файл с расширением .db")
         return
-    
+
     await message.answer("⏳ Начинаю импорт данных...\n🧹 Очищаю старые данные...")
-    
+
     import aiosqlite
     import tempfile
     import os
     from datetime import datetime, date as date_type
-    
+
     def parse_datetime(value):
-        """Преобразует строку в datetime"""
         if value is None:
             return None
         if isinstance(value, (datetime, date_type)):
@@ -362,9 +380,8 @@ async def import_from_sqlite(message: types.Message):
                 return datetime.strptime(value, '%Y-%m-%d')
             except:
                 return None
-    
-    def parse_date(value):
-        """Преобразует строку в date"""
+
+    def parse_date_local(value):
         if value is None:
             return None
         if isinstance(value, date_type):
@@ -375,32 +392,25 @@ async def import_from_sqlite(message: types.Message):
             return datetime.strptime(value[:10], '%Y-%m-%d').date()
         except:
             return None
-    
+
     try:
-        # Скачиваем файл
         file = await bot.get_file(message.document.file_id)
-        
+
         with tempfile.NamedTemporaryFile(delete=False, suffix='.db') as tmp:
             tmp_path = tmp.name
-        
+
         await bot.download_file(file.file_path, tmp_path)
-        
         sqlite = await aiosqlite.connect(tmp_path)
-        
+
         from database import pool
-        
+
         stats = {
-            'workers': 0,
-            'categories': 0,
-            'prices': 0,
-            'worker_cats': 0,
-            'work_logs': 0,
-            'advances': 0,
-            'penalties': 0
+            'workers': 0, 'categories': 0, 'prices': 0,
+            'worker_cats': 0, 'work_logs': 0, 'advances': 0, 'penalties': 0
         }
-        
+
         async with pool.acquire() as pg:
-            # ===== ОЧИЩАЕМ ТАБЛИЦЫ =====
+            # Очищаем таблицы
             await pg.execute("DELETE FROM work_log")
             await pg.execute("DELETE FROM advances")
             await pg.execute("DELETE FROM penalties")
@@ -409,101 +419,80 @@ async def import_from_sqlite(message: types.Message):
             await pg.execute("DELETE FROM workers")
             await pg.execute("DELETE FROM categories")
             await pg.execute("DELETE FROM reminder_settings")
-            
-            # Сбрасываем счётчики SERIAL
+
+            # Сбрасываем счётчики
             await pg.execute("ALTER SEQUENCE IF EXISTS work_log_id_seq RESTART WITH 1")
             await pg.execute("ALTER SEQUENCE IF EXISTS advances_id_seq RESTART WITH 1")
             await pg.execute("ALTER SEQUENCE IF EXISTS penalties_id_seq RESTART WITH 1")
-            
-            # ===== ИМПОРТИРУЕМ ДАННЫЕ =====
-            
-            # --- categories (сначала, т.к. другие зависят от неё) ---
+
+            # categories
             cursor = await sqlite.execute("SELECT code, name, emoji FROM categories")
             rows = await cursor.fetchall()
             for row in rows:
-                await pg.execute("""
-                    INSERT INTO categories (code, name, emoji)
-                    VALUES ($1, $2, $3)
-                """, row[0], row[1], row[2])
+                await pg.execute(
+                    "INSERT INTO categories (code, name, emoji) VALUES ($1, $2, $3)",
+                    row[0], row[1], row[2])
             stats['categories'] = len(rows)
-            
-            # --- workers ---
+
+            # workers
             cursor = await sqlite.execute("SELECT telegram_id, name, registered_at FROM workers")
             rows = await cursor.fetchall()
             for row in rows:
-                reg_at = parse_datetime(row[2])
-                await pg.execute("""
-                    INSERT INTO workers (telegram_id, name, registered_at)
-                    VALUES ($1, $2, $3)
-                """, row[0], row[1], reg_at)
+                await pg.execute(
+                    "INSERT INTO workers (telegram_id, name, registered_at) VALUES ($1, $2, $3)",
+                    row[0], row[1], parse_datetime(row[2]))
             stats['workers'] = len(rows)
-            
-            # --- price_list ---
+
+            # price_list
             cursor = await sqlite.execute("SELECT code, name, price, category_code, is_active FROM price_list")
             rows = await cursor.fetchall()
             for row in rows:
-                await pg.execute("""
-                    INSERT INTO price_list (code, name, price, category_code, is_active)
-                    VALUES ($1, $2, $3, $4, $5)
-                """, row[0], row[1], row[2], row[3], bool(row[4]))
+                await pg.execute(
+                    "INSERT INTO price_list (code, name, price, category_code, is_active) VALUES ($1, $2, $3, $4, $5)",
+                    row[0], row[1], row[2], row[3], bool(row[4]))
             stats['prices'] = len(rows)
-            
-            # --- worker_categories ---
+
+            # worker_categories
             cursor = await sqlite.execute("SELECT worker_id, category_code FROM worker_categories")
             rows = await cursor.fetchall()
             for row in rows:
-                await pg.execute("""
-                    INSERT INTO worker_categories (worker_id, category_code)
-                    VALUES ($1, $2)
-                """, row[0], row[1])
+                await pg.execute(
+                    "INSERT INTO worker_categories (worker_id, category_code) VALUES ($1, $2)",
+                    row[0], row[1])
             stats['worker_cats'] = len(rows)
-            
-            # --- work_log ---
-            cursor = await sqlite.execute("""
-                SELECT worker_id, work_code, quantity, price_per_unit, total, work_date, created_at
-                FROM work_log ORDER BY id
-            """)
+
+            # work_log
+            cursor = await sqlite.execute(
+                "SELECT worker_id, work_code, quantity, price_per_unit, total, work_date, created_at FROM work_log ORDER BY id")
             rows = await cursor.fetchall()
             for row in rows:
-                work_date = parse_date(row[5])
-                created_at = parse_datetime(row[6])
-                await pg.execute("""
-                    INSERT INTO work_log (worker_id, work_code, quantity, price_per_unit, total, work_date, created_at)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7)
-                """, row[0], row[1], row[2], row[3], row[4], work_date, created_at)
+                await pg.execute(
+                    "INSERT INTO work_log (worker_id, work_code, quantity, price_per_unit, total, work_date, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7)",
+                    row[0], row[1], row[2], row[3], row[4],
+                    parse_date_local(row[5]), parse_datetime(row[6]))
             stats['work_logs'] = len(rows)
-            
-            # --- advances ---
-            cursor = await sqlite.execute("""
-                SELECT worker_id, amount, comment, advance_date, created_at
-                FROM advances ORDER BY id
-            """)
+
+            # advances
+            cursor = await sqlite.execute(
+                "SELECT worker_id, amount, comment, advance_date, created_at FROM advances ORDER BY id")
             rows = await cursor.fetchall()
             for row in rows:
-                advance_date = parse_date(row[3])
-                created_at = parse_datetime(row[4])
-                await pg.execute("""
-                    INSERT INTO advances (worker_id, amount, comment, advance_date, created_at)
-                    VALUES ($1, $2, $3, $4, $5)
-                """, row[0], row[1], row[2] or '', advance_date, created_at)
+                await pg.execute(
+                    "INSERT INTO advances (worker_id, amount, comment, advance_date, created_at) VALUES ($1, $2, $3, $4, $5)",
+                    row[0], row[1], row[2] or '', parse_date_local(row[3]), parse_datetime(row[4]))
             stats['advances'] = len(rows)
-            
-            # --- penalties ---
-            cursor = await sqlite.execute("""
-                SELECT worker_id, amount, reason, penalty_date, created_at
-                FROM penalties ORDER BY id
-            """)
+
+            # penalties
+            cursor = await sqlite.execute(
+                "SELECT worker_id, amount, reason, penalty_date, created_at FROM penalties ORDER BY id")
             rows = await cursor.fetchall()
             for row in rows:
-                penalty_date = parse_date(row[3])
-                created_at = parse_datetime(row[4])
-                await pg.execute("""
-                    INSERT INTO penalties (worker_id, amount, reason, penalty_date, created_at)
-                    VALUES ($1, $2, $3, $4, $5)
-                """, row[0], row[1], row[2] or '', penalty_date, created_at)
+                await pg.execute(
+                    "INSERT INTO penalties (worker_id, amount, reason, penalty_date, created_at) VALUES ($1, $2, $3, $4, $5)",
+                    row[0], row[1], row[2] or '', parse_date_local(row[3]), parse_datetime(row[4]))
             stats['penalties'] = len(rows)
-            
-            # --- reminder_settings ---
+
+            # reminder_settings
             cursor = await sqlite.execute("SELECT * FROM reminder_settings WHERE id = 1")
             settings = await cursor.fetchone()
             if settings:
@@ -514,10 +503,10 @@ async def import_from_sqlite(message: types.Message):
                     VALUES (1, $1, $2, $3, $4, $5, $6, $7, $8, $9)
                 """, settings[1], settings[2], settings[3], settings[4],
                     settings[5], settings[6], bool(settings[7]), bool(settings[8]), bool(settings[9]))
-        
+
         await sqlite.close()
         os.unlink(tmp_path)
-        
+
         await message.answer(
             f"✅ Импорт завершён!\n\n"
             f"📊 Перенесено:\n"
@@ -529,7 +518,7 @@ async def import_from_sqlite(message: types.Message):
             f"💳 Авансов: {stats['advances']}\n"
             f"⚠️ Штрафов: {stats['penalties']}"
         )
-        
+
     except Exception as e:
         logging.error(f"Import error: {e}")
         await message.answer(f"❌ Ошибка импорта: {e}")
@@ -599,7 +588,7 @@ async def view_date_chosen(callback: types.CallbackQuery, state: FSMContext):
         await callback.answer()
         return
     await show_entries_for_date(callback.message, state,
-                                 callback.from_user.id, value, edit=True)
+                                callback.from_user.id, value, edit=True)
     await callback.answer()
 
 
@@ -610,7 +599,7 @@ async def view_custom_date(message: types.Message, state: FSMContext):
         await message.answer("❌ Неверный формат!\nВведите дату как ДД.ММ.ГГГГ\nНапример: 25.05.2025")
         return
     await show_entries_for_date(message, state,
-                                 message.from_user.id, chosen.isoformat(), edit=False)
+                                message.from_user.id, chosen.isoformat(), edit=False)
 
 
 async def show_entries_for_date(message, state, user_id, target_date, edit=False):
@@ -635,14 +624,16 @@ async def show_entries_for_date(message, state, user_id, target_date, edit=False
         time_str = created[11:16] if len(created) > 16 else ""
         text += f"{cat_emoji} {name} x {int(qty)} = {int(total)} руб ({time_str})\n"
         day_total += total
-        if target_date == date.today().isoformat():
+
+        # ✅ Исправлено — используем is_today()
+        if is_today(target_date):
             buttons.append([InlineKeyboardButton(
                 text=f"❌ {name} x {int(qty)} ({int(total)} руб)",
                 callback_data=f"mydel:{entry_id}"
             )])
 
     text += f"\n💰 Итого: {int(day_total)} руб"
-    if target_date == date.today().isoformat() and buttons:
+    if is_today(target_date) and buttons:
         text += "\n\nНажмите чтобы удалить:"
 
     buttons.append([InlineKeyboardButton(text="🔙 Назад", callback_data="view_back")])
@@ -717,12 +708,12 @@ async def show_daily(message: types.Message, state: FSMContext):
     await state.clear()
     uid = message.from_user.id
     today = date.today()
-    
+
     rows = await get_daily_total(uid)
     if not rows:
         await message.answer("📭 Сегодня нет записей.")
         return
-    
+
     all_items = await get_price_list()
     names = {i[0]: i[1] for i in all_items}
     text = f"📊 {today.strftime('%d.%m.%Y')}:\n\n"
@@ -731,8 +722,7 @@ async def show_daily(message: types.Message, state: FSMContext):
         text += f"▫️ {names.get(code, code)}: {int(qty)}шт x {int(price)} руб = {int(sub)} руб\n"
         total += sub
     text += f"\n💰 Итого за день: {int(total)} руб"
-    
-    # Добавляем баланс
+
     stats = await get_worker_full_stats(uid, today.year, today.month)
     text += f"\n\n━━━━━━━━━━━━━━━━━━━\n"
     text += f"📊 За {MONTHS_RU[today.month]}:\n"
@@ -742,7 +732,7 @@ async def show_daily(message: types.Message, state: FSMContext):
     if stats['penalties'] > 0:
         text += f"⚠️ Штрафы: {int(stats['penalties'])} руб\n"
     text += f"📊 Остаток: {int(stats['balance'])} руб"
-    
+
     await message.answer(text)
 
 
@@ -773,24 +763,24 @@ async def show_monthly(message: types.Message, state: FSMContext):
         grand_total += subtotal
     if current_date != "":
         text += f"   💰 За день: {int(day_total)} руб\n"
-    
+
     text += f"\n━━━━━━━━━━━━━━━━━━━\n"
     text += f"📊 Рабочих дней: {work_days}\n"
     text += f"💰 Заработано: {int(grand_total)} руб\n"
-    
-    # Добавляем авансы и штрафы
+
     stats = await get_worker_full_stats(uid, today.year, today.month)
     if stats['advances'] > 0:
         text += f"💳 Авансы: {int(stats['advances'])} руб\n"
     if stats['penalties'] > 0:
         text += f"⚠️ Штрафы: {int(stats['penalties'])} руб\n"
     text += f"📊 К выплате: {int(stats['balance'])} руб"
-    
+
     if work_days > 0:
         avg = grand_total / work_days
         text += f"\n📊 Среднее в день: {int(avg)} руб"
-    
+
     await send_long_message(message, text)
+
 
 # ==================== БЭКАП ====================
 
@@ -801,4 +791,3 @@ async def manual_backup(message: types.Message, state: FSMContext):
     await state.clear()
     from bot import send_backup
     await send_backup(message.from_user.id)
-

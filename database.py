@@ -1,12 +1,25 @@
 import asyncpg
 import os
-from datetime import date
+from datetime import date, datetime
 from typing import Optional, List, Any
 
 DATABASE_URL = os.getenv("DATABASE_URL", "")
 
 # Пул соединений (глобальный)
 pool: Optional[asyncpg.Pool] = None
+
+
+def parse_date(value):
+    """Преобразует строку в date"""
+    if value is None:
+        return date.today()
+    if isinstance(value, date):
+        return value
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, str):
+        return datetime.strptime(value[:10], '%Y-%m-%d').date()
+    return date.today()
 
 
 async def init_db():
@@ -92,7 +105,6 @@ async def init_db():
             )
         """)
         
-        # Проверка reminder_settings
         count = await conn.fetchval("SELECT COUNT(*) FROM reminder_settings")
         if count == 0:
             await conn.execute("""
@@ -102,7 +114,6 @@ async def init_db():
                 VALUES (1, 18, 0, 20, 0, 21, 0, TRUE, TRUE, TRUE)
             """)
         
-        # Индексы
         await conn.execute("CREATE INDEX IF NOT EXISTS idx_worklog_worker_date ON work_log(worker_id, work_date)")
         await conn.execute("CREATE INDEX IF NOT EXISTS idx_worklog_date ON work_log(work_date)")
         await conn.execute("CREATE INDEX IF NOT EXISTS idx_advances_worker_date ON advances(worker_id, advance_date)")
@@ -269,26 +280,9 @@ async def delete_price_item_permanently(code: str) -> bool:
 
 
 # ==================== ЗАПИСИ О РАБОТЕ ====================
-async def add_work(worker_id: int, work_code: str, quantity: int, price: float, work_date=None) -> float:
-    if work_date is None:
-        work_date = date.today()
-    
-    # Добавь эти строки:
-    if isinstance(work_date, str):
-        from datetime import datetime
-        work_date = datetime.strptime(work_date[:10], '%Y-%m-%d').date()
-    
-    total = quantity * price
-    async with pool.acquire() as conn:
-        await conn.execute("""
-            INSERT INTO work_log (worker_id, work_code, quantity, price_per_unit, total, work_date)
-            VALUES ($1, $2, $3, $4, $5, $6)
-        """, worker_id, work_code, quantity, price, total, work_date)
-    return total
 
 async def add_work(worker_id: int, work_code: str, quantity: int, price: float, work_date=None) -> float:
-    if work_date is None:
-        work_date = date.today()
+    work_date = parse_date(work_date)
     total = quantity * price
     async with pool.acquire() as conn:
         await conn.execute("""
@@ -311,8 +305,7 @@ async def delete_last_entry(worker_id: int):
 # ==================== ОТЧЁТЫ ====================
 
 async def get_daily_total(worker_id: int, target_date=None):
-    if target_date is None:
-        target_date = date.today()
+    target_date = parse_date(target_date)
     async with pool.acquire() as conn:
         rows = await conn.fetch("""
             SELECT work_code, SUM(quantity), price_per_unit, SUM(total)
@@ -341,8 +334,7 @@ async def get_monthly_total(worker_id: int, year: int = None, month: int = None)
 
 
 async def get_all_workers_daily_summary(target_date=None):
-    if target_date is None:
-        target_date = date.today()
+    target_date = parse_date(target_date)
     async with pool.acquire() as conn:
         rows = await conn.fetch("""
             SELECT w.telegram_id, w.name, COALESCE(SUM(wl.total), 0)
@@ -373,8 +365,7 @@ async def get_all_workers_monthly_summary(year: int = None, month: int = None):
 
 
 async def get_workers_without_records(target_date=None):
-    if target_date is None:
-        target_date = date.today()
+    target_date = parse_date(target_date)
     async with pool.acquire() as conn:
         all_workers = await conn.fetch("SELECT telegram_id, name FROM workers")
         with_records = await conn.fetch(
@@ -418,6 +409,7 @@ async def get_today_entries(worker_id: int):
 
 
 async def get_worker_entries_by_date(worker_id: int, target_date):
+    target_date = parse_date(target_date)
     async with pool.acquire() as conn:
         rows = await conn.fetch("""
             SELECT wl.id, pl.name, wl.quantity, wl.price_per_unit, wl.total,
@@ -642,8 +634,7 @@ async def get_worker_full_stats(worker_id: int, year: int = None, month: int = N
 # ==================== АВАНСЫ ====================
 
 async def add_advance(worker_id: int, amount: float, comment: str = "", advance_date=None):
-    if advance_date is None:
-        advance_date = date.today()
+    advance_date = parse_date(advance_date)
     async with pool.acquire() as conn:
         await conn.execute("""
             INSERT INTO advances (worker_id, amount, comment, advance_date)
@@ -715,6 +706,7 @@ async def get_all_advances_monthly(year: int = None, month: int = None):
 
 
 async def get_worker_entries_by_custom_date(worker_id: int, target_date):
+    target_date = parse_date(target_date)
     async with pool.acquire() as conn:
         rows = await conn.fetch("""
             SELECT wl.id, pl.name, c.name, c.emoji, wl.quantity,
@@ -731,8 +723,7 @@ async def get_worker_entries_by_custom_date(worker_id: int, target_date):
 # ==================== ШТРАФЫ ====================
 
 async def add_penalty(worker_id: int, amount: float, reason: str = "", penalty_date=None):
-    if penalty_date is None:
-        penalty_date = date.today()
+    penalty_date = parse_date(penalty_date)
     async with pool.acquire() as conn:
         await conn.execute("""
             INSERT INTO penalties (worker_id, amount, reason, penalty_date)
