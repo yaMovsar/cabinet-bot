@@ -67,6 +67,17 @@ async def init_db():
             )
         """)
         await db.execute("""
+            CREATE TABLE IF NOT EXISTS penalties (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                worker_id INTEGER NOT NULL,
+                amount REAL NOT NULL,
+                reason TEXT DEFAULT '',
+                penalty_date DATE NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (worker_id) REFERENCES workers(telegram_id)
+            )
+        """)
+        await db.execute("""
             CREATE TABLE IF NOT EXISTS reminder_settings (
                 id INTEGER PRIMARY KEY DEFAULT 1,
                 evening_hour INTEGER DEFAULT 18,
@@ -80,7 +91,6 @@ async def init_db():
                 report_enabled BOOLEAN DEFAULT 1
             )
         """)
-        # Вставляем дефолтные настройки если нет
         existing = await db.execute("SELECT COUNT(*) FROM reminder_settings")
         count = (await existing.fetchone())[0]
         if count == 0:
@@ -141,6 +151,13 @@ async def delete_worker(telegram_id):
     async with aiosqlite.connect(DB_NAME) as db:
         await db.execute("DELETE FROM worker_categories WHERE worker_id = ?", (telegram_id,))
         await db.execute("DELETE FROM workers WHERE telegram_id = ?", (telegram_id,))
+        await db.commit()
+
+
+async def rename_worker(telegram_id, new_name):
+    async with aiosqlite.connect(DB_NAME) as db:
+        await db.execute("UPDATE workers SET name = ? WHERE telegram_id = ?",
+                         (new_name, telegram_id))
         await db.commit()
 
 
@@ -514,10 +531,9 @@ async def get_admin_monthly_detailed_all(year=None, month=None):
         return await cursor.fetchall()
 
 
-# ==================== ОПТИМИЗИРОВАННЫЕ ЗАПРОСЫ (пункт 7) ====================
+# ==================== ОПТИМИЗИРОВАННЫЕ ЗАПРОСЫ ====================
 
 async def get_all_workers_balance(year=None, month=None):
-    """Один запрос вместо N циклов — баланс всех работников"""
     if year is None:
         year = date.today().year
     if month is None:
@@ -528,6 +544,7 @@ async def get_all_workers_balance(year=None, month=None):
                 w.telegram_id, w.name,
                 COALESCE(earn.total_earned, 0) as earned,
                 COALESCE(adv.total_advance, 0) as advances,
+                COALESCE(pen.total_penalty, 0) as penalties,
                 COALESCE(earn.work_days, 0) as work_days
             FROM workers w
             LEFT JOIN (
@@ -544,13 +561,18 @@ async def get_all_workers_balance(year=None, month=None):
                 WHERE strftime('%Y', advance_date) = ? AND strftime('%m', advance_date) = ?
                 GROUP BY worker_id
             ) adv ON w.telegram_id = adv.worker_id
+            LEFT JOIN (
+                SELECT worker_id, SUM(amount) as total_penalty
+                FROM penalties
+                WHERE strftime('%Y', penalty_date) = ? AND strftime('%m', penalty_date) = ?
+                GROUP BY worker_id
+            ) pen ON w.telegram_id = pen.worker_id
             ORDER BY w.name
-        """, (str(year), f"{month:02d}", str(year), f"{month:02d}"))
+        """, (str(year), f"{month:02d}", str(year), f"{month:02d}", str(year), f"{month:02d}"))
         return await cursor.fetchall()
 
 
 async def get_worker_full_stats(worker_id, year=None, month=None):
-    """Один запрос — полная статистика работника"""
     if year is None:
         year = date.today().year
     if month is None:
@@ -576,11 +598,21 @@ async def get_worker_full_stats(worker_id, year=None, month=None):
         """, (worker_id, str(year), f"{month:02d}"))
         adv_row = await cursor2.fetchone()
 
+        cursor3 = await db.execute("""
+            SELECT COALESCE(SUM(amount), 0)
+            FROM penalties
+            WHERE worker_id = ?
+              AND strftime('%Y', penalty_date) = ?
+              AND strftime('%m', penalty_date) = ?
+        """, (worker_id, str(year), f"{month:02d}"))
+        pen_row = await cursor3.fetchone()
+
     return {
         'earned': earn_row[0],
         'work_days': earn_row[1],
         'advances': adv_row[0],
-        'balance': earn_row[0] - adv_row[0]
+        'penalties': pen_row[0],
+        'balance': earn_row[0] - adv_row[0] - pen_row[0]
     }
 
 
@@ -676,7 +708,66 @@ async def get_worker_entries_by_custom_date(worker_id, target_date):
         return await cursor.fetchall()
 
 
-# ==================== НАСТРОЙКИ НАПОМИНАНИЙ (пункт 24) ====================
+# ==================== ШТРАФЫ ====================
+
+async def add_penalty(worker_id, amount, reason="", penalty_date=None):
+    if penalty_date is None:
+        penalty_date = date.today()
+    async with aiosqlite.connect(DB_NAME) as db:
+        await db.execute("""
+            INSERT INTO penalties (worker_id, amount, reason, penalty_date)
+            VALUES (?, ?, ?, ?)
+        """, (worker_id, amount, reason, penalty_date))
+        await db.commit()
+
+
+async def get_worker_penalties(worker_id, year=None, month=None):
+    if year is None:
+        year = date.today().year
+    if month is None:
+        month = date.today().month
+    async with aiosqlite.connect(DB_NAME) as db:
+        cursor = await db.execute("""
+            SELECT id, amount, reason, penalty_date, created_at
+            FROM penalties
+            WHERE worker_id = ?
+              AND strftime('%Y', penalty_date) = ?
+              AND strftime('%m', penalty_date) = ?
+            ORDER BY penalty_date
+        """, (worker_id, str(year), f"{month:02d}"))
+        return await cursor.fetchall()
+
+
+async def get_worker_penalties_total(worker_id, year=None, month=None):
+    if year is None:
+        year = date.today().year
+    if month is None:
+        month = date.today().month
+    async with aiosqlite.connect(DB_NAME) as db:
+        cursor = await db.execute("""
+            SELECT COALESCE(SUM(amount), 0)
+            FROM penalties
+            WHERE worker_id = ?
+              AND strftime('%Y', penalty_date) = ?
+              AND strftime('%m', penalty_date) = ?
+        """, (worker_id, str(year), f"{month:02d}"))
+        result = await cursor.fetchone()
+        return result[0]
+
+
+async def delete_penalty(penalty_id):
+    async with aiosqlite.connect(DB_NAME) as db:
+        cursor = await db.execute(
+            "SELECT id, amount, reason, penalty_date, worker_id FROM penalties WHERE id = ?",
+            (penalty_id,))
+        penalty = await cursor.fetchone()
+        if penalty:
+            await db.execute("DELETE FROM penalties WHERE id = ?", (penalty_id,))
+            await db.commit()
+        return penalty
+
+
+# ==================== НАСТРОЙКИ НАПОМИНАНИЙ ====================
 
 async def get_reminder_settings():
     async with aiosqlite.connect(DB_NAME) as db:
