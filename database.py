@@ -100,6 +100,12 @@ async def init_db():
                  report_hour, report_minute, evening_enabled, late_enabled, report_enabled)
                 VALUES (1, 18, 0, 20, 0, 21, 0, 1, 1, 1)
             """)
+# Индексы для ускорения запросов
+await db.execute("CREATE INDEX IF NOT EXISTS idx_worklog_worker_date ON work_log(worker_id, work_date)")
+await db.execute("CREATE INDEX IF NOT EXISTS idx_worklog_date ON work_log(work_date)")
+await db.execute("CREATE INDEX IF NOT EXISTS idx_advances_worker_date ON advances(worker_id, advance_date)")
+await db.execute("CREATE INDEX IF NOT EXISTS idx_penalties_worker_date ON penalties(worker_id, penalty_date)")
+await db.execute("CREATE INDEX IF NOT EXISTS idx_worker_categories ON worker_categories(worker_id, category_code)")
         await db.commit()
 
 

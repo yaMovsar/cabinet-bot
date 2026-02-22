@@ -20,7 +20,10 @@ async def cmd_start(message: types.Message, state: FSMContext, is_admin: bool, i
     uid = message.from_user.id
 
     if is_admin:
-        await add_worker(uid, message.from_user.full_name)
+        # Добавляем только если ещё нет в базе
+        from database import worker_exists
+        if not await worker_exists(uid):
+            await add_worker(uid, message.from_user.full_name)
         text = (
             f"Привет, {message.from_user.first_name}! 👋\n"
             "Вы — администратор.\n\n"
@@ -31,7 +34,8 @@ async def cmd_start(message: types.Message, state: FSMContext, is_admin: bool, i
             "4. ✏️ Редактировать → Назначить кат."
         )
     elif is_manager:
-        await add_worker(uid, message.from_user.full_name)
+        if not await worker_exists(uid):
+            await add_worker(uid, message.from_user.full_name)
         text = (
             f"Привет, {message.from_user.first_name}! 👋\n"
             "Вы — менеджер. Доступны отчёты и управление деньгами."
@@ -83,7 +87,7 @@ async def admin_panel(message: types.Message, state: FSMContext, is_admin: bool,
     )
 
 
-@router.message(F.text == "📊 Панель отчётов")
+@router.message(F.text == "💼 Кабинет Эльмурзы")
 async def manager_panel(message: types.Message, state: FSMContext, is_manager: bool, **kwargs):
     if not is_manager:
         await message.answer("⛔ Нет доступа.")

@@ -13,7 +13,7 @@ def get_main_keyboard(user_id=None):
     if user_id and user_id == ADMIN_ID:
         buttons.append([KeyboardButton(text="👑 Админ-панель")])
     elif user_id and user_id in MANAGER_IDS:
-        buttons.append([KeyboardButton(text="📊 Панель отчётов")])
+        buttons.append([KeyboardButton(text="💼 Кабинет Эльмурзы")])
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
 
 

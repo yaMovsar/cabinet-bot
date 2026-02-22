@@ -501,26 +501,43 @@ async def my_entries_back(callback: types.CallbackQuery, state: FSMContext):
 @router.message(F.text == "💰 За сегодня")
 async def show_daily(message: types.Message, state: FSMContext):
     await state.clear()
-    rows = await get_daily_total(message.from_user.id)
+    uid = message.from_user.id
+    today = date.today()
+    
+    rows = await get_daily_total(uid)
     if not rows:
         await message.answer("📭 Сегодня нет записей.")
         return
+    
     all_items = await get_price_list()
     names = {i[0]: i[1] for i in all_items}
-    text = f"📊 {date.today().strftime('%d.%m.%Y')}:\n\n"
+    text = f"📊 {today.strftime('%d.%m.%Y')}:\n\n"
     total = 0
     for code, qty, price, sub in rows:
         text += f"▫️ {names.get(code, code)}: {int(qty)}шт x {int(price)} руб = {int(sub)} руб\n"
         total += sub
-    text += f"\n💰 Итого: {int(total)} руб"
+    text += f"\n💰 Итого за день: {int(total)} руб"
+    
+    # Добавляем баланс
+    stats = await get_worker_full_stats(uid, today.year, today.month)
+    text += f"\n\n━━━━━━━━━━━━━━━━━━━\n"
+    text += f"📊 За {MONTHS_RU[today.month]}:\n"
+    text += f"💰 Заработано: {int(stats['earned'])} руб\n"
+    if stats['advances'] > 0:
+        text += f"💳 Авансы: {int(stats['advances'])} руб\n"
+    if stats['penalties'] > 0:
+        text += f"⚠️ Штрафы: {int(stats['penalties'])} руб\n"
+    text += f"📊 Остаток: {int(stats['balance'])} руб"
+    
     await message.answer(text)
 
 
 @router.message(F.text == "📊 За месяц")
 async def show_monthly(message: types.Message, state: FSMContext):
     await state.clear()
+    uid = message.from_user.id
     today = date.today()
-    rows = await get_monthly_by_days(message.from_user.id, today.year, today.month)
+    rows = await get_monthly_by_days(uid, today.year, today.month)
     if not rows:
         await message.answer("📭 В этом месяце нет записей.")
         return
@@ -542,11 +559,24 @@ async def show_monthly(message: types.Message, state: FSMContext):
         grand_total += subtotal
     if current_date != "":
         text += f"   💰 За день: {int(day_total)} руб\n"
+    
     text += f"\n━━━━━━━━━━━━━━━━━━━\n"
     text += f"📊 Рабочих дней: {work_days}\n"
-    text += f"💰 Итого за месяц: {int(grand_total)} руб"
+    text += f"💰 Заработано: {int(grand_total)} руб\n"
+    
+    # Добавляем авансы и штрафы
+    stats = await get_worker_full_stats(uid, today.year, today.month)
+    if stats['advances'] > 0:
+        text += f"💳 Авансы: {int(stats['advances'])} руб\n"
+    if stats['penalties'] > 0:
+        text += f"⚠️ Штрафы: {int(stats['penalties'])} руб\n"
+    text += f"📊 К выплате: {int(stats['balance'])} руб"
+    
+    if work_days > 0:
+        avg = grand_total / work_days
+        text += f"\n📊 Среднее в день: {int(avg)} руб"
+    
     await send_long_message(message, text)
-
 
 # ==================== БЭКАП ====================
 
