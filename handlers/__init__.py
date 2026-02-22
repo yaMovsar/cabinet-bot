@@ -4,12 +4,11 @@ from .common import router as common_router
 from .worker import router as worker_router
 from .admin import router as admin_router
 from .money import router as money_router
-from .reports import router as reports_router
+from .report_handlers import router as reports_router
 from .reminders import router as reminders_router
 
 
 def setup_routers() -> Router:
-    """Собрать все роутеры в один"""
     main_router = Router()
     
     main_router.include_router(common_router)
