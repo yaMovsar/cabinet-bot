@@ -342,26 +342,51 @@ async def import_from_sqlite(message: types.Message):
         await message.answer("❌ Отправьте файл с расширением .db")
         return
     
-    await message.answer("⏳ Начинаю импорт данных...")
+    await message.answer("⏳ Начинаю импорт данных...\n🧹 Очищаю старые данные...")
     
     import aiosqlite
     import tempfile
     import os
+    from datetime import datetime, date as date_type
+    
+    def parse_datetime(value):
+        """Преобразует строку в datetime"""
+        if value is None:
+            return None
+        if isinstance(value, (datetime, date_type)):
+            return value
+        try:
+            return datetime.strptime(value, '%Y-%m-%d %H:%M:%S')
+        except:
+            try:
+                return datetime.strptime(value, '%Y-%m-%d')
+            except:
+                return None
+    
+    def parse_date(value):
+        """Преобразует строку в date"""
+        if value is None:
+            return None
+        if isinstance(value, date_type):
+            return value
+        if isinstance(value, datetime):
+            return value.date()
+        try:
+            return datetime.strptime(value[:10], '%Y-%m-%d').date()
+        except:
+            return None
     
     try:
         # Скачиваем файл
         file = await bot.get_file(message.document.file_id)
         
-        # Создаём временный файл
         with tempfile.NamedTemporaryFile(delete=False, suffix='.db') as tmp:
             tmp_path = tmp.name
         
         await bot.download_file(file.file_path, tmp_path)
         
-        # Подключаемся к SQLite
         sqlite = await aiosqlite.connect(tmp_path)
         
-        # Импортируем данные
         from database import pool
         
         stats = {
@@ -375,27 +400,43 @@ async def import_from_sqlite(message: types.Message):
         }
         
         async with pool.acquire() as pg:
-            # --- workers ---
-            cursor = await sqlite.execute("SELECT telegram_id, name, registered_at FROM workers")
-            rows = await cursor.fetchall()
-            for row in rows:
-                await pg.execute("""
-                    INSERT INTO workers (telegram_id, name, registered_at)
-                    VALUES ($1, $2, $3)
-                    ON CONFLICT (telegram_id) DO UPDATE SET name = $2
-                """, row[0], row[1], row[2])
-            stats['workers'] = len(rows)
+            # ===== ОЧИЩАЕМ ТАБЛИЦЫ =====
+            await pg.execute("DELETE FROM work_log")
+            await pg.execute("DELETE FROM advances")
+            await pg.execute("DELETE FROM penalties")
+            await pg.execute("DELETE FROM worker_categories")
+            await pg.execute("DELETE FROM price_list")
+            await pg.execute("DELETE FROM workers")
+            await pg.execute("DELETE FROM categories")
+            await pg.execute("DELETE FROM reminder_settings")
             
-            # --- categories ---
+            # Сбрасываем счётчики SERIAL
+            await pg.execute("ALTER SEQUENCE IF EXISTS work_log_id_seq RESTART WITH 1")
+            await pg.execute("ALTER SEQUENCE IF EXISTS advances_id_seq RESTART WITH 1")
+            await pg.execute("ALTER SEQUENCE IF EXISTS penalties_id_seq RESTART WITH 1")
+            
+            # ===== ИМПОРТИРУЕМ ДАННЫЕ =====
+            
+            # --- categories (сначала, т.к. другие зависят от неё) ---
             cursor = await sqlite.execute("SELECT code, name, emoji FROM categories")
             rows = await cursor.fetchall()
             for row in rows:
                 await pg.execute("""
                     INSERT INTO categories (code, name, emoji)
                     VALUES ($1, $2, $3)
-                    ON CONFLICT (code) DO UPDATE SET name = $2, emoji = $3
                 """, row[0], row[1], row[2])
             stats['categories'] = len(rows)
+            
+            # --- workers ---
+            cursor = await sqlite.execute("SELECT telegram_id, name, registered_at FROM workers")
+            rows = await cursor.fetchall()
+            for row in rows:
+                reg_at = parse_datetime(row[2])
+                await pg.execute("""
+                    INSERT INTO workers (telegram_id, name, registered_at)
+                    VALUES ($1, $2, $3)
+                """, row[0], row[1], reg_at)
+            stats['workers'] = len(rows)
             
             # --- price_list ---
             cursor = await sqlite.execute("SELECT code, name, price, category_code, is_active FROM price_list")
@@ -404,7 +445,6 @@ async def import_from_sqlite(message: types.Message):
                 await pg.execute("""
                     INSERT INTO price_list (code, name, price, category_code, is_active)
                     VALUES ($1, $2, $3, $4, $5)
-                    ON CONFLICT (code) DO UPDATE SET name = $2, price = $3, category_code = $4, is_active = $5
                 """, row[0], row[1], row[2], row[3], bool(row[4]))
             stats['prices'] = len(rows)
             
@@ -415,7 +455,6 @@ async def import_from_sqlite(message: types.Message):
                 await pg.execute("""
                     INSERT INTO worker_categories (worker_id, category_code)
                     VALUES ($1, $2)
-                    ON CONFLICT DO NOTHING
                 """, row[0], row[1])
             stats['worker_cats'] = len(rows)
             
@@ -426,10 +465,12 @@ async def import_from_sqlite(message: types.Message):
             """)
             rows = await cursor.fetchall()
             for row in rows:
+                work_date = parse_date(row[5])
+                created_at = parse_datetime(row[6])
                 await pg.execute("""
                     INSERT INTO work_log (worker_id, work_code, quantity, price_per_unit, total, work_date, created_at)
                     VALUES ($1, $2, $3, $4, $5, $6, $7)
-                """, row[0], row[1], row[2], row[3], row[4], row[5], row[6])
+                """, row[0], row[1], row[2], row[3], row[4], work_date, created_at)
             stats['work_logs'] = len(rows)
             
             # --- advances ---
@@ -439,10 +480,12 @@ async def import_from_sqlite(message: types.Message):
             """)
             rows = await cursor.fetchall()
             for row in rows:
+                advance_date = parse_date(row[3])
+                created_at = parse_datetime(row[4])
                 await pg.execute("""
                     INSERT INTO advances (worker_id, amount, comment, advance_date, created_at)
                     VALUES ($1, $2, $3, $4, $5)
-                """, row[0], row[1], row[2] or '', row[3], row[4])
+                """, row[0], row[1], row[2] or '', advance_date, created_at)
             stats['advances'] = len(rows)
             
             # --- penalties ---
@@ -452,10 +495,12 @@ async def import_from_sqlite(message: types.Message):
             """)
             rows = await cursor.fetchall()
             for row in rows:
+                penalty_date = parse_date(row[3])
+                created_at = parse_datetime(row[4])
                 await pg.execute("""
                     INSERT INTO penalties (worker_id, amount, reason, penalty_date, created_at)
                     VALUES ($1, $2, $3, $4, $5)
-                """, row[0], row[1], row[2] or '', row[3], row[4])
+                """, row[0], row[1], row[2] or '', penalty_date, created_at)
             stats['penalties'] = len(rows)
             
             # --- reminder_settings ---
@@ -467,16 +512,11 @@ async def import_from_sqlite(message: types.Message):
                     (id, evening_hour, evening_minute, late_hour, late_minute,
                      report_hour, report_minute, evening_enabled, late_enabled, report_enabled)
                     VALUES (1, $1, $2, $3, $4, $5, $6, $7, $8, $9)
-                    ON CONFLICT (id) DO UPDATE SET
-                        evening_hour = $1, evening_minute = $2,
-                        late_hour = $3, late_minute = $4,
-                        report_hour = $5, report_minute = $6,
-                        evening_enabled = $7, late_enabled = $8, report_enabled = $9
                 """, settings[1], settings[2], settings[3], settings[4],
                     settings[5], settings[6], bool(settings[7]), bool(settings[8]), bool(settings[9]))
         
         await sqlite.close()
-        os.unlink(tmp_path)  # Удаляем временный файл
+        os.unlink(tmp_path)
         
         await message.answer(
             f"✅ Импорт завершён!\n\n"
@@ -493,6 +533,7 @@ async def import_from_sqlite(message: types.Message):
     except Exception as e:
         logging.error(f"Import error: {e}")
         await message.answer(f"❌ Ошибка импорта: {e}")
+
 
 # ==================== МОЙ БАЛАНС ====================
 
