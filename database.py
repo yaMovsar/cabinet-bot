@@ -269,6 +269,22 @@ async def delete_price_item_permanently(code: str) -> bool:
 
 
 # ==================== ЗАПИСИ О РАБОТЕ ====================
+async def add_work(worker_id: int, work_code: str, quantity: int, price: float, work_date=None) -> float:
+    if work_date is None:
+        work_date = date.today()
+    
+    # Добавь эти строки:
+    if isinstance(work_date, str):
+        from datetime import datetime
+        work_date = datetime.strptime(work_date[:10], '%Y-%m-%d').date()
+    
+    total = quantity * price
+    async with pool.acquire() as conn:
+        await conn.execute("""
+            INSERT INTO work_log (worker_id, work_code, quantity, price_per_unit, total, work_date)
+            VALUES ($1, $2, $3, $4, $5, $6)
+        """, worker_id, work_code, quantity, price, total, work_date)
+    return total
 
 async def add_work(worker_id: int, work_code: str, quantity: int, price: float, work_date=None) -> float:
     if work_date is None:
