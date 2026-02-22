@@ -35,6 +35,79 @@ async def global_error_handler(event: types.ErrorEvent):
         pass
 
 
+# ==================== БЭКАП ====================
+
+async def send_backup(chat_id=None):
+    """Бэкап PostgreSQL в JSON"""
+    if chat_id is None:
+        chat_id = ADMIN_ID
+    
+    import json
+    import tempfile
+    import os
+    from aiogram.types import FSInputFile
+    from database import pool
+    
+    try:
+        async with pool.acquire() as pg:
+            backup_data = {}
+            
+            tables = ['categories', 'workers', 'price_list', 'worker_categories', 
+                      'work_log', 'advances', 'penalties', 'reminder_settings']
+            
+            for table in tables:
+                rows = await pg.fetch(f"SELECT * FROM {table}")
+                backup_data[table] = [dict(row) for row in rows]
+        
+        # Конвертируем даты в строки
+        def convert_dates(obj):
+            if isinstance(obj, dict):
+                return {k: convert_dates(v) for k, v in obj.items()}
+            elif isinstance(obj, list):
+                return [convert_dates(i) for i in obj]
+            elif hasattr(obj, 'isoformat'):
+                return obj.isoformat()
+            return obj
+        
+        backup_data = convert_dates(backup_data)
+        
+        now = datetime.now()
+        filename = f"backup_{now.strftime('%Y%m%d_%H%M')}.json"
+        
+        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.json', encoding='utf-8') as f:
+            json.dump(backup_data, f, ensure_ascii=False, indent=2)
+            tmp_path = f.name
+        
+        stats = (
+            f"💾 Бэкап PostgreSQL\n"
+            f"📅 {now.strftime('%d.%m.%Y %H:%M')}\n\n"
+            f"👥 Работников: {len(backup_data.get('workers', []))}\n"
+            f"📝 Записей: {len(backup_data.get('work_log', []))}\n"
+            f"💳 Авансов: {len(backup_data.get('advances', []))}\n"
+            f"⚠️ Штрафов: {len(backup_data.get('penalties', []))}"
+        )
+        
+        await bot.send_document(
+            chat_id,
+            FSInputFile(tmp_path, filename=filename),
+            caption=stats
+        )
+        
+        os.unlink(tmp_path)
+        
+    except Exception as e:
+        logging.error(f"Backup error: {e}")
+        await bot.send_message(chat_id, f"❌ Ошибка бэкапа: {e}")
+
+
+async def safe_backup():
+    """Безопасный wrapper для автобэкапа"""
+    try:
+        await send_backup(ADMIN_ID)
+    except Exception as e:
+        logging.exception(f"Backup failed: {e}")
+
+
 # ==================== НАПОМИНАНИЯ ====================
 
 async def send_evening_reminder():
@@ -151,6 +224,12 @@ async def main():
         scheduler.add_job(safe_admin_report, "cron",
             hour=settings['report_hour'], minute=settings['report_minute'],
             id='admin_report')
+    
+   # Бэкап каждые 5 часов
+        scheduler.add_job(safe_backup, "interval", hours=5, id='auto_backup_interval')
+
+   # + Бэкап в 23:00 (перед сном)
+	scheduler.add_job(safe_backup, "cron", hour=23, minute=0, id='auto_backup_night')
     scheduler.start()
     
     logging.info("Бот запущен с PostgreSQL!")
