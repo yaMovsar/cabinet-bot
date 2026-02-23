@@ -37,9 +37,12 @@ class AdminEditWork(StatesGroup):
     choosing_new_unit = State()  # Добавлено
 
 
-class AdminAddWorker(StatesGroup):
-    entering_id = State()
+class AdminAddWork(StatesGroup):
+    choosing_category = State()
+    entering_code = State()
     entering_name = State()
+    entering_price = State()
+    choosing_unit = State()  # Добавлено
 
 
 # ==================== АДМИН: РЕДАКТИРОВАНИЕ ====================
