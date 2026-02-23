@@ -155,7 +155,7 @@ async def back_handler(message: types.Message, state: FSMContext):
 
 # ==================== СООБЩЕНИЕ АДМИНИСТРАТОРУ ====================
 
-@router.message(F.text == "💬 Сообщение админу")
+@router.message(F.text == "💬 Написать вопрос")
 async def message_to_admin_start(message: types.Message, state: FSMContext):
     await state.clear()
     await message.answer(

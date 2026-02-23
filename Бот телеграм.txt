@@ -42,7 +42,7 @@ Railway: https://railway.app (проект cabinet-bot)
 
 
 У меня Telegram бот для учёта работ на производстве.
-Стек: Python, aiogram 3, SQLite, Railway.
+Стек: Python, aiogram 3, Railway. PostgreSQL 
 Вот ссылка на GitHub: https://github.com/yaMovsar/cabinet-bot
 
 [вставь нужные файлы]

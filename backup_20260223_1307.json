@@ -812,15 +812,6 @@
       "price_type": "unit"
     },
     {
-      "code": "zakaznie",
-      "name": "Заказ без узора",
-      "price": 250.0,
-      "category_code": "shlifovka_2",
-      "is_active": true,
-      "unit": "шт",
-      "price_type": "unit"
-    },
-    {
       "code": "maryam_b",
       "name": "Марьям бол",
       "price": 250.0,
@@ -843,15 +834,6 @@
       "name": "Дверь мал",
       "price": 50.0,
       "category_code": "uvakovka_dveri",
-      "is_active": true,
-      "unit": "шт",
-      "price_type": "unit"
-    },
-    {
-      "code": "zakaz6",
-      "name": "Рамки заказ",
-      "price": 250.0,
-      "category_code": "shlifovka_zakaz",
       "is_active": true,
       "unit": "шт",
       "price_type": "unit"
