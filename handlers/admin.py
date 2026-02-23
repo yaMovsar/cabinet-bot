@@ -415,11 +415,11 @@ async def edit_price_start(message: types.Message, state: FSMContext):
     
     buttons = []
     for row in items:
-        # row — это кортеж, делаем из него список, добавляем "шт" если нужно, обрезаем до 7
-        row_list = list(row)
-        while len(row_list) < 7:
-            row_list.append("шт")
-        code, name, price, _, _, emoji, unit = row_list[:7]
+        # row — кортеж, превращаем в список, добавляем "шт" если нужно
+        r = list(row)
+        if len(r) == 6:
+            r.append("шт")
+        code, name, price, _, _, emoji, unit = r
         
         buttons.append([InlineKeyboardButton(
             text=f"{emoji} {name} — {int(price)} руб/{unit}",
@@ -441,10 +441,10 @@ async def del_work_start(message: types.Message, state: FSMContext):
     
     buttons = []
     for row in items:
-        row_list = list(row)
-        while len(row_list) < 7:
-            row_list.append("шт")
-        code, name, price, _, _, emoji, unit = row_list[:7]
+        r = list(row)
+        if len(r) == 6:
+            r.append("шт")
+        code, name, price, _, _, emoji, unit = r
         
         buttons.append([InlineKeyboardButton(
             text=f"{emoji} {name} — {int(price)} руб/{unit}",
@@ -467,10 +467,10 @@ async def edit_work_start(message: types.Message, state: FSMContext):
     
     buttons = []
     for row in items:
-        row_list = list(row)
-        while len(row_list) < 7:
-            row_list.append("шт")
-        code, name, price, _, _, emoji, unit = row_list[:7]
+        r = list(row)
+        if len(r) == 6:
+            r.append("шт")
+        code, name, price, _, _, emoji, unit = r
         
         buttons.append([InlineKeyboardButton(
             text=f"{emoji} {name} — {int(price)} руб/{unit}",
