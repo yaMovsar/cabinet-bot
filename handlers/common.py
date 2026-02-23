@@ -19,9 +19,11 @@ async def cmd_start(message: types.Message, state: FSMContext, is_admin: bool, i
     await state.clear()
     uid = message.from_user.id
 
+    # Регистрируем если не зарегистрирован
+    if not await worker_exists(uid):
+        await add_worker(uid, message.from_user.full_name)
+
     if is_admin:
-        if not await worker_exists(uid):
-            await add_worker(uid, message.from_user.full_name)
         text = (
             f"Привет, {message.from_user.first_name}! 👋\n"
             "Вы — администратор.\n\n"
@@ -32,22 +34,18 @@ async def cmd_start(message: types.Message, state: FSMContext, is_admin: bool, i
             "4. ✏️ Редактировать → Назначить кат."
         )
     elif is_manager:
-        if not await worker_exists(uid):
-            await add_worker(uid, message.from_user.full_name)
         text = (
             f"Привет, {message.from_user.first_name}! 👋\n"
             "Вы — менеджер. Доступны отчёты и управление деньгами."
         )
     else:
-        exists = await worker_exists(uid)
-        if not exists:
-            await message.answer("⛔ Вы не зарегистрированы. Обратитесь к администратору.")
-            return
         text = (
             f"Привет, {message.from_user.first_name}! 👋\n"
             "Записывайте работу каждый день!"
         )
+    
     await message.answer(text, reply_markup=get_main_keyboard(uid))
+
 
 @router.message(Command("cancel"))
 async def cmd_cancel(message: types.Message, state: FSMContext):
@@ -93,6 +91,8 @@ async def manager_panel(message: types.Message, state: FSMContext, is_manager: b
     await message.answer("📊 Панель отчётов", reply_markup=get_manager_keyboard())
 
 
+# ==================== МЕНЮ ====================
+
 @router.message(F.text == "➕ Добавить", AdminFilter())
 async def menu_add(message: types.Message, state: FSMContext):
     await state.clear()
@@ -126,17 +126,20 @@ async def menu_money(message: types.Message, state: FSMContext):
     )
 
 
-@router.message(F.text == "🔙 В админ-панель")
-async def back_to_admin(message: types.Message, state: FSMContext):
-    await state.clear()
-    if message.from_user.id == ADMIN_ID:
-        await message.answer("👑 Админ-панель", reply_markup=get_admin_keyboard())
-    elif message.from_user.id in MANAGER_IDS:
-        await message.answer("📊 Панель отчётов", reply_markup=get_manager_keyboard())
+# ==================== КНОПКИ НАЗАД ====================
 
-
-@router.message(F.text == "🔙 Назад")
-async def back_to_main(message: types.Message, state: FSMContext):
+@router.message(F.text.in_(["🔙 В админ-панель", "🔙 Назад", "🏠 Главное меню"]))
+async def back_handler(message: types.Message, state: FSMContext):
     await state.clear()
-    await message.answer("Главное меню",
-                         reply_markup=get_main_keyboard(message.from_user.id))
+    uid = message.from_user.id
+    
+    if message.text == "🔙 В админ-панель":
+        if uid == ADMIN_ID:
+            await message.answer("👑 Админ-панель", reply_markup=get_admin_keyboard())
+        elif uid in MANAGER_IDS:
+            await message.answer("📊 Панель отчётов", reply_markup=get_manager_keyboard())
+        else:
+            await message.answer("🏠 Главное меню", reply_markup=get_main_keyboard(uid))
+    else:
+        # "🔙 Назад" и "🏠 Главное меню" — оба ведут в главное меню
+        await message.answer("🏠 Главное меню", reply_markup=get_main_keyboard(uid))
