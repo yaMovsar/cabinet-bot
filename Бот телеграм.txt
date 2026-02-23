@@ -1,6 +1,8 @@
 cd C:\Users\%USERNAME%\Desktop\cabinet_bot1
 
-
+git add .
+git commit -m "обновил бота"
+git push
 
 === МОЙ БОТ ===
 
