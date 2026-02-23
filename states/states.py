@@ -34,6 +34,7 @@ class AdminAddWork(StatesGroup):
     choosing_category = State()
     entering_code = State()
     entering_name = State()
+    choosing_price_type = State()  # ← НОВОЕ
     entering_price = State()
 
 

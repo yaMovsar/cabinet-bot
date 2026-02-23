@@ -111,8 +111,29 @@ async def add_work_code(message: types.Message, state: FSMContext):
 @router.message(AdminAddWork.entering_name)
 async def add_work_name(message: types.Message, state: FSMContext):
     await state.update_data(name=message.text.strip())
-    await message.answer("Расценка (число):")
+    
+    # ← НОВОЕ: выбор типа оплаты
+    buttons = [
+        [InlineKeyboardButton(text="📦 За штуку", callback_data="pt:unit")],
+        [InlineKeyboardButton(text="📐 За м²", callback_data="pt:square")]
+    ]
+    await message.answer(
+        "Выберите тип оплаты:",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
+    )
+    await state.set_state(AdminAddWork.choosing_price_type)
+
+
+# ← НОВОЕ: обработка выбора типа
+@router.callback_query(F.data.startswith("pt:"), AdminAddWork.choosing_price_type)
+async def add_work_price_type(callback: types.CallbackQuery, state: FSMContext):
+    price_type = callback.data.split(":")[1]
+    await state.update_data(price_type=price_type)
+    
+    unit_label = "м²" if price_type == "square" else "шт"
+    await callback.message.edit_text(f"Расценка за 1 {unit_label} (число):")
     await state.set_state(AdminAddWork.entering_price)
+    await callback.answer()
 
 
 @router.message(AdminAddWork.entering_price)
@@ -124,9 +145,25 @@ async def add_work_price(message: types.Message, state: FSMContext):
     except ValueError:
         await message.answer("❌ Положительное число!")
         return
+    
     data = await state.get_data()
-    await add_price_item(data["code"], data["name"], price, data["category_code"])
-    await message.answer(f"✅ {data['code']} — {data['name']} — {int(price)} руб", reply_markup=get_add_keyboard())
+    price_type = data.get("price_type", "unit")
+    
+    # ← ИЗМЕНЕНО: передаём price_type
+    await add_price_item(
+        data["code"], 
+        data["name"], 
+        price, 
+        data["category_code"],
+        price_type  # ← НОВОЕ
+    )
+    
+    unit_label = "м²" if price_type == "square" else "шт"
+    await message.answer(
+        f"✅ {data['code']} — {data['name']}\n"
+        f"💰 {int(price)} руб/{unit_label}",
+        reply_markup=get_add_keyboard()
+    )
     await state.clear()
 
 
@@ -331,7 +368,7 @@ async def edit_price_start(message: types.Message, state: FSMContext):
         await message.answer("⚠️ Пусто.")
         return
     buttons = [[InlineKeyboardButton(text=f"{ce} {n} — {int(p)} руб",
-                callback_data=f"ep:{c}")] for c, n, p, cc, cn, ce in items]
+                callback_data=f"ep:{c}")] for c, n, p, pt, cc, cn, ce in items]
     await message.answer("Позиция:", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
     await state.set_state(AdminEditPrice.choosing_item)
 
