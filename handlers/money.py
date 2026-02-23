@@ -443,11 +443,15 @@ async def earnings_month(message: types.Message, state: FSMContext):
             details = await get_worker_monthly_details(tid, today.year, today.month)
             text += f"👤 {name} {ce}\n"
             current_cat = ""
-            for pl_name, c_emoji, c_name, qty, price, total in details:
+            # ✅ ИСПРАВЛЕНО: добавлен price_type в распаковку
+            for pl_name, c_emoji, c_name, qty, price, total, price_type in details:
                 if c_name != current_cat:
                     current_cat = c_name
                     text += f"   {c_emoji} {c_name}:\n"
-                text += f"      ▫️ {pl_name}: {int(qty)}шт x {int(price)} руб = {int(total)} руб\n"
+                # ✅ УЛУЧШЕНО: показываем единицы измерения
+                unit_label = "м²" if price_type == "square" else "шт"
+                qty_display = f"{qty:.2f}" if price_type == "square" else str(int(qty))
+                text += f"      ▫️ {pl_name}: {qty_display} {unit_label} x {int(price)} руб = {int(total)} руб\n"
             text += f"   💰 Итого: {int(earned)} руб\n\n"
         else:
             text += f"❌ {name} {ce} — нет записей\n\n"
