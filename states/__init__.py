@@ -6,8 +6,7 @@ from .states import (
     AdminDeleteCategory, AdminDeleteWork, AdminDeleteWorker,
     AdminAdvance, AdminDeleteAdvance,
     AdminPenalty, AdminDeletePenalty,
-    ReportWorker, AdminReminderSettings,
-    AdminEditCategory, AdminEditWork, SupportMessage  # Добавлены
+    ReportWorker, AdminReminderSettings
 )
 
 __all__ = [
@@ -18,6 +17,5 @@ __all__ = [
     'AdminDeleteCategory', 'AdminDeleteWork', 'AdminDeleteWorker',
     'AdminAdvance', 'AdminDeleteAdvance',
     'AdminPenalty', 'AdminDeletePenalty',
-    'ReportWorker', 'AdminReminderSettings',
-    'AdminEditCategory', 'AdminEditWork', 'SupportMessage'  # Добавлены
+    'ReportWorker', 'AdminReminderSettings'
 ]

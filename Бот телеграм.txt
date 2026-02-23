@@ -1,8 +1,6 @@
 cd C:\Users\%USERNAME%\Desktop\cabinet_bot1
 
-git add .
-git commit -m "обновил бота"
-git push
+
 
 === МОЙ БОТ ===
 
@@ -40,7 +38,7 @@ Railway: https://railway.app (проект cabinet-bot)
 
 
 У меня Telegram бот для учёта работ на производстве.
-Стек: Python, aiogram 3, Postgres, Railway.
+Стек: Python, aiogram 3, SQLite, Railway.
 Вот ссылка на GitHub: https://github.com/yaMovsar/cabinet-bot
 
 [вставь нужные файлы]
