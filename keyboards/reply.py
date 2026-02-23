@@ -2,7 +2,7 @@ from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 from config import ADMIN_ID, MANAGER_IDS
 
 
-ddef get_main_keyboard(user_id=None):
+def get_main_keyboard(user_id=None):
     buttons = [
         [KeyboardButton(text="📝 Записать работу"),
          KeyboardButton(text="📋 Мои записи")],
