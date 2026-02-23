@@ -20,9 +20,10 @@ from states import (
     AdminAssignCategory, AdminRemoveCategory,
     AdminEditPrice, AdminRenameWorker,
     AdminDeleteCategory, AdminDeleteWork, AdminDeleteWorker,
-    AdminManageEntries
-    AdminEditCategory, AdminEditWork  
+    AdminManageEntries,
+    AdminEditCategory, AdminEditWork
 )
+
 from keyboards import get_add_keyboard, get_edit_keyboard, get_delete_keyboard, get_info_keyboard
 from utils import format_date, send_long_message
 from handlers.filters import AdminFilter, StaffFilter
