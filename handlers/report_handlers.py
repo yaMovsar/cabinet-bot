@@ -53,7 +53,8 @@ async def summary_month(message: types.Message, state: FSMContext):
     grand_total = 0
     worker_days = set()
 
-    for tid, wname, cname, cemoji, wdate, pname, qty, price, total in details:
+    # ✅ ИСПРАВЛЕНО: добавлен price_type в распаковку
+    for tid, wname, cname, cemoji, wdate, pname, qty, price, total, price_type in details:
         if wname != current_worker:
             if current_date is not None:
                 text += f"            💰 День: {int(day_total)} руб\n"
@@ -93,7 +94,10 @@ async def summary_month(message: types.Message, state: FSMContext):
             day_total = 0
             worker_days.add(wdate)
 
-        text += f"         ▫️ {pname}: {int(qty)} x {int(price)} = {int(total)} руб\n"
+        # ✅ УЛУЧШЕНО: добавлен вывод единиц измерения
+        unit_label = "м²" if price_type == "square" else "шт"
+        qty_display = f"{qty:.2f}" if price_type == "square" else str(int(qty))
+        text += f"         ▫️ {pname}: {qty_display} {unit_label} x {int(price)} руб = {int(total)} руб\n"
         worker_total += total
         cat_total += total
         day_total += total
