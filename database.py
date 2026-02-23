@@ -775,6 +775,43 @@ async def delete_penalty(penalty_id: int):
         return None
 
 
+# ==================== РЕДАКТИРОВАНИЕ КАТЕГОРИЙ/РАБОТ ====================
+
+async def rename_category(code: str, new_name: str):
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE categories SET name = $1 WHERE code = $2", new_name, code)
+
+
+async def update_category_emoji(code: str, new_emoji: str):
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE categories SET emoji = $1 WHERE code = $2", new_emoji, code)
+
+
+async def rename_price_item(code: str, new_name: str):
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE price_list SET name = $1 WHERE code = $2", new_name, code)
+
+
+async def change_price_item_category(code: str, new_category_code: str):
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE price_list SET category_code = $1 WHERE code = $2",
+            new_category_code, code)
+
+
+async def get_price_item_by_code(code: str):
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow("""
+            SELECT pl.code, pl.name, pl.price, pl.category_code, c.name, c.emoji
+            FROM price_list pl
+            JOIN categories c ON pl.category_code = c.code
+            WHERE pl.code = $1
+        """, code)
+        return tuple(row) if row else None
+
 # ==================== НАСТРОЙКИ НАПОМИНАНИЙ ====================
 
 async def get_reminder_settings():

@@ -9,6 +9,7 @@ def get_main_keyboard(user_id=None):
         [KeyboardButton(text="💰 За сегодня"),
          KeyboardButton(text="📊 За месяц")],
         [KeyboardButton(text="💳 Мой баланс")],
+        [KeyboardButton(text="💬 Поддержка")],  # Добавлена кнопка
     ]
     if user_id and user_id == ADMIN_ID:
         buttons.append([KeyboardButton(text="👑 Админ-панель")])
@@ -64,6 +65,8 @@ def get_edit_keyboard():
          KeyboardButton(text="🔓 Убрать кат.")],
         [KeyboardButton(text="✏️ Расценка"),
          KeyboardButton(text="✏️ Переименовать")],
+        [KeyboardButton(text="📂 Ред. категорию"),
+         KeyboardButton(text="📝 Ред. работу")],  # Добавлены кнопки
         [KeyboardButton(text="🔧 Записи работников")],
         [KeyboardButton(text="🔙 В админ-панель")],
     ]

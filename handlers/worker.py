@@ -1,3 +1,4 @@
+from states import WorkEntry, ViewEntries, WorkerDeleteEntry, SupportMessage
 from datetime import date, timedelta
 import logging
 
@@ -776,6 +777,105 @@ async def show_monthly(message: types.Message, state: FSMContext):
 
     await send_long_message(message, text)
 
+# ==================== ПОДДЕРЖКА ====================
+
+@router.message(F.text == "💬 Поддержка")
+async def support_start(message: types.Message, state: FSMContext):
+    await state.clear()
+    buttons = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="❌ Отмена", callback_data="support_cancel")]
+    ])
+    await message.answer(
+        "💬 Связь с поддержкой\n\n"
+        "Напишите ваше сообщение или вопрос.\n"
+        "Администратор получит его и ответит вам.",
+        reply_markup=buttons
+    )
+    await state.set_state(SupportMessage.entering_message)
+
+
+@router.callback_query(F.data == "support_cancel", SupportMessage.entering_message)
+async def support_cancel(callback: types.CallbackQuery, state: FSMContext):
+    await state.clear()
+    await callback.message.edit_text("❌ Отменено")
+    await callback.answer()
+
+
+@router.message(SupportMessage.entering_message)
+async def support_send(message: types.Message, state: FSMContext):
+    user = message.from_user
+    text = message.text.strip()
+    
+    if len(text) < 3:
+        await message.answer("❌ Сообщение слишком короткое!")
+        return
+    
+    # Отправляем админу
+    admin_text = (
+        f"💬 Сообщение в поддержку!\n\n"
+        f"👤 От: {user.full_name}\n"
+        f"🆔 ID: {user.id}\n"
+        f"📝 Сообщение:\n{text}"
+    )
+    
+    buttons = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="💬 Ответить", callback_data=f"support_reply:{user.id}")]
+    ])
+    
+    try:
+        await bot.send_message(ADMIN_ID, admin_text, reply_markup=buttons)
+        await message.answer(
+            "✅ Сообщение отправлено!\n\n"
+            "Администратор получит его и ответит вам в ближайшее время.",
+            reply_markup=get_main_keyboard(message.from_user.id)
+        )
+    except Exception as e:
+        logging.error(f"Support message error: {e}")
+        await message.answer("❌ Ошибка отправки. Попробуйте позже.")
+    
+    await state.clear()
+
+
+@router.callback_query(F.data.startswith("support_reply:"))
+async def support_reply_start(callback: types.CallbackQuery, state: FSMContext):
+    if callback.from_user.id != ADMIN_ID:
+        await callback.answer("⛔ Нет доступа", show_alert=True)
+        return
+    
+    user_id = int(callback.data.split(":")[1])
+    await state.update_data(reply_to_user=user_id)
+    await callback.message.answer(
+        f"💬 Введите ответ для пользователя ID {user_id}:"
+    )
+    await state.set_state(SupportMessage.waiting_reply)
+    await callback.answer()
+
+
+@router.message(SupportMessage.waiting_reply)
+async def support_reply_send(message: types.Message, state: FSMContext):
+    if message.from_user.id != ADMIN_ID:
+        await state.clear()
+        return
+    
+    data = await state.get_data()
+    user_id = data.get("reply_to_user")
+    
+    if not user_id:
+        await message.answer("❌ Ошибка: не найден пользователь")
+        await state.clear()
+        return
+    
+    try:
+        await bot.send_message(
+            user_id,
+            f"💬 Ответ от администратора:\n\n{message.text}"
+        )
+        await message.answer("✅ Ответ отправлен!")
+    except Exception as e:
+        logging.error(f"Support reply error: {e}")
+        await message.answer(f"❌ Ошибка: {e}")
+    
+    await state.clear()
 
 # ==================== БЭКАП ====================
 

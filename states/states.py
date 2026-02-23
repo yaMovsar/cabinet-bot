@@ -126,3 +126,26 @@ class ReportWorker(StatesGroup):
 class AdminReminderSettings(StatesGroup):
     main_menu = State()
     entering_time = State()
+
+
+# ==================== РЕДАКТИРОВАНИЕ КАТЕГОРИЙ/РАБОТ ====================
+
+class AdminEditCategory(StatesGroup):
+    choosing_category = State()
+    choosing_action = State()
+    entering_new_name = State()
+    entering_new_emoji = State()
+
+
+class AdminEditWork(StatesGroup):
+    choosing_work = State()
+    choosing_action = State()
+    entering_new_name = State()
+    choosing_new_category = State()
+
+
+# ==================== ПОДДЕРЖКА ====================
+
+class SupportMessage(StatesGroup):
+    entering_message = State()
+    waiting_reply = State()
