@@ -1,9 +1,10 @@
-from aiogram import Router, types, F
+from aiogram import Router, types, F, Bot
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
 
-from config import ADMIN_ID, MANAGER_IDS
-from database import add_worker, worker_exists
+from config import ADMIN_ID, MANAGER_IDS, BOT_TOKEN
+from database import add_worker, worker_exists, get_all_workers
 from keyboards import (
     get_main_keyboard, get_admin_keyboard, get_manager_keyboard,
     get_add_keyboard, get_edit_keyboard, get_delete_keyboard,
@@ -12,6 +13,11 @@ from keyboards import (
 from handlers.filters import AdminFilter, StaffFilter
 
 router = Router()
+bot = Bot(token=BOT_TOKEN)
+
+
+class MessageToAdmin(StatesGroup):
+    waiting_for_message = State()
 
 
 @router.message(Command("start"))
@@ -143,3 +149,42 @@ async def back_handler(message: types.Message, state: FSMContext):
     else:
         # "🔙 Назад" и "🏠 Главное меню" — оба ведут в главное меню
         await message.answer("🏠 Главное меню", reply_markup=get_main_keyboard(uid))
+
+
+
+# ==================== СООБЩЕНИЕ АДМИНИСТРАТОРУ ====================
+
+@router.message(F.text == "💬 Сообщение админу")
+async def message_to_admin_start(message: types.Message, state: FSMContext):
+    await state.clear()
+    await message.answer(
+        "📨 Напишите ваше сообщение администратору:\n\n"
+        "(или нажмите 🔙 Назад для отмены)"
+    )
+    await state.set_state(MessageToAdmin.waiting_for_message)
+
+
+@router.message(MessageToAdmin.waiting_for_message)
+async def message_to_admin_send(message: types.Message, state: FSMContext):
+    if message.text == "🔙 Назад":
+        await state.clear()
+        await message.answer("❌ Отменено.", reply_markup=get_main_keyboard(message.from_user.id))
+        return
+    
+    # Получи имя отправителя
+    workers = await get_all_workers()
+    sender_name = next((name for tid, name in workers if tid == message.from_user.id), "Неизвестный")
+    
+    # Отправь админу
+    await bot.send_message(
+        ADMIN_ID,
+        f"📨 Сообщение от работника:\n\n"
+        f"👤 {sender_name} (ID: {message.from_user.id})\n"
+        f"📝 {message.text}"
+    )
+    
+    await message.answer(
+        "✅ Сообщение отправлено администратору!",
+        reply_markup=get_main_keyboard(message.from_user.id)
+    )
+    await state.clear()

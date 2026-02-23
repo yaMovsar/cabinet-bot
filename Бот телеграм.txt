@@ -1,4 +1,5 @@
-cd C:\Users\user\cabinet-bot
+cd C:\Users\user\Desktop\cabinet-bot
+
 git add .
 git commit -m "Заменён импорт SQLite на JSON"
 git push origin main
