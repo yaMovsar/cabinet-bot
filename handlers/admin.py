@@ -359,7 +359,23 @@ async def rmcat_done(callback: types.CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
-# === РАСЦЕНКА ===
+# === РАСЦЕНКА, УДАЛЕНИЕ И РЕДАКТИРОВАНИЕ РАБОТЫ — ФИНАЛЬНАЯ ВЕРСИЯ ===
+async def _get_price_buttons(items, callback_prefix):
+    buttons = []
+    for row in items:
+        row = list(row)
+        # Гарантированно 7 элементов
+        while len(row) < 7:
+            row.append("шт")
+        code, name, price, cat_code, cat_name, cat_emoji, unit = row
+        
+        buttons.append([InlineKeyboardButton(
+            text=f"{cat_emoji} {name} — {int(price)} руб/{unit}",
+            callback_data=f"{callback_prefix}:{code}"
+        )])
+    return buttons
+
+
 @router.message(F.text == "✏️ Расценка", AdminFilter())
 async def edit_price_start(message: types.Message, state: FSMContext):
     await state.clear()
@@ -368,23 +384,11 @@ async def edit_price_start(message: types.Message, state: FSMContext):
         await message.answer("⚠️ Пусто.")
         return
     
-    buttons = []
-    for row in items:
-        r = list(row)                  # превращаем кортеж в список
-        if len(r) == 6:                # если старые записи без unit
-            r.append("шт")
-        code, name, price, _, _, emoji, unit = r
-        
-        buttons.append([InlineKeyboardButton(
-            text=f"{emoji} {name} — {int(price)} руб/{unit}",
-            callback_data=f"ep:{code}"
-        )])
-    
+    buttons = await _get_price_buttons(items, "ep")
     await message.answer("Позиция:", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
     await state.set_state(AdminEditPrice.choosing_item)
 
 
-# === УДАЛЕНИЕ РАБОТЫ ===
 @router.message(F.text == "🗑 Уд. работу", AdminFilter())
 async def del_work_start(message: types.Message, state: FSMContext):
     await state.clear()
@@ -393,21 +397,25 @@ async def del_work_start(message: types.Message, state: FSMContext):
         await message.answer("📄 Пусто.")
         return
     
-    buttons = []
-    for row in items:
-        r = list(row)
-        if len(r) == 6:
-            r.append("шт")
-        code, name, price, _, _, emoji, unit = r
-        
-        buttons.append([InlineKeyboardButton(
-            text=f"{emoji} {name} — {int(price)} руб/{unit}",
-            callback_data=f"dw:{code}"
-        )])
-    
+    buttons = await _get_price_buttons(items, "dw")
     buttons.append([InlineKeyboardButton(text="❌ Отмена", callback_data="cdel")])
     await message.answer("Удалить:", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
     await state.set_state(AdminDeleteWork.choosing)
+
+
+@router.message(F.text == "📝 Ред. работу", AdminFilter())
+async def edit_work_start(message: types.Message, state: FSMContext):
+    await state.clear()
+    items = await get_price_list()
+    if not items:
+        await message.answer("📄 Нет работ.")
+        return
+    
+    buttons = await _get_price_buttons(items, "ework")
+    buttons.append([InlineKeyboardButton(text="❌ Отмена", callback_data="cdel")])
+    await message.answer("Выберите работу для редактирования:", 
+                         reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+    await state.set_state(AdminEditWork.choosing_work)
 
 
 # === РЕДАКТИРОВАНИЕ РАБОТЫ ===
