@@ -359,51 +359,6 @@ async def rmcat_done(callback: types.CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
-# ==================== РАСЦЕНКА ====================
-
-@router.message(F.text == "✏️ Расценка", AdminFilter())
-async def edit_price_start(message: types.Message, state: FSMContext):
-    await state.clear()
-    items = await get_price_list()
-    if not items:
-        await message.answer("⚠️ Пусто.")
-        return
-    
-    buttons = []
-    for row in items:
-        code, name, price, _, _, emoji, unit = (row + ["шт"])[:7]
-        buttons.append([InlineKeyboardButton(
-            text=f"{emoji} {name} — {int(price)} руб/{unit}",
-            callback_data=f"ep:{code}"
-        )])
-    
-    await message.answer("Позиция:", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
-    await state.set_state(AdminEditPrice.choosing_item)
-
-
-@router.callback_query(F.data.startswith("ep:"), AdminEditPrice.choosing_item)
-async def edit_price_chosen(callback: types.CallbackQuery, state: FSMContext):
-    await state.update_data(code=callback.data.split(":")[1])
-    await callback.message.edit_text("Новая расценка:")
-    await state.set_state(AdminEditPrice.entering_new_price)
-    await callback.answer()
-
-
-@router.message(AdminEditPrice.entering_new_price)
-async def edit_price_done(message: types.Message, state: FSMContext):
-    try:
-        p = float(message.text.replace(',', '.'))
-        if p <= 0:
-            raise ValueError
-    except ValueError:
-        await message.answer("❌ Положительное число!")
-        return
-    data = await state.get_data()
-    await update_price(data["code"], p)
-    await message.answer(f"✅ Расценка: {int(p)} руб", reply_markup=get_edit_keyboard())
-    await state.clear()
-
-
 # === РАСЦЕНКА ===
 @router.message(F.text == "✏️ Расценка", AdminFilter())
 async def edit_price_start(message: types.Message, state: FSMContext):
@@ -415,9 +370,8 @@ async def edit_price_start(message: types.Message, state: FSMContext):
     
     buttons = []
     for row in items:
-        # row — кортеж, превращаем в список, добавляем "шт" если нужно
-        r = list(row)
-        if len(r) == 6:
+        r = list(row)                  # превращаем кортеж в список
+        if len(r) == 6:                # если старые записи без unit
             r.append("шт")
         code, name, price, _, _, emoji, unit = r
         
