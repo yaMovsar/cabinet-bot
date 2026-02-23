@@ -349,23 +349,19 @@ async def back_to_menu(callback: types.CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
-# ==================== ИМПОРТ ИЗ SQLITE ====================
+# ==================== ИМПОРТ ИЗ JSON ====================
 
-@router.message(F.document)
-async def import_from_sqlite(message: types.Message):
-    """Админ отправляет .db файл — бот переносит данные в PostgreSQL"""
+@router.message(F.document.file_name.endswith('.json'))
+async def import_from_json(message: types.Message):
+    """Админ отправляет .json файл — бот переносит данные в PostgreSQL"""
     if message.from_user.id != ADMIN_ID:
         return
 
-    if not message.document.file_name.endswith('.db'):
-        await message.answer("❌ Отправьте файл с расширением .db")
-        return
+    await message.answer("⏳ Начинаю импорт из JSON...\n🧹 Очищаю старые данные...")
 
-    await message.answer("⏳ Начинаю импорт данных...\n🧹 Очищаю старые данные...")
-
-    import aiosqlite
     import tempfile
     import os
+    import json
     from datetime import datetime, date as date_type
 
     def parse_datetime(value):
@@ -374,33 +370,30 @@ async def import_from_sqlite(message: types.Message):
         if isinstance(value, (datetime, date_type)):
             return value
         try:
-            return datetime.strptime(value, '%Y-%m-%d %H:%M:%S')
+            return datetime.fromisoformat(value)
         except:
-            try:
-                return datetime.strptime(value, '%Y-%m-%d')
-            except:
-                return None
+            return None
 
     def parse_date_local(value):
         if value is None:
             return None
         if isinstance(value, date_type):
             return value
-        if isinstance(value, datetime):
-            return value.date()
         try:
-            return datetime.strptime(value[:10], '%Y-%m-%d').date()
+            return datetime.fromisoformat(value).date() if 'T' in value else datetime.strptime(value, '%Y-%m-%d').date()
         except:
             return None
 
     try:
         file = await bot.get_file(message.document.file_id)
 
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.db') as tmp:
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.json', mode='w', encoding='utf-8') as tmp:
             tmp_path = tmp.name
 
         await bot.download_file(file.file_path, tmp_path)
-        sqlite = await aiosqlite.connect(tmp_path)
+
+        with open(tmp_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
 
         from database import pool
 
@@ -426,89 +419,71 @@ async def import_from_sqlite(message: types.Message):
             await pg.execute("ALTER SEQUENCE IF EXISTS penalties_id_seq RESTART WITH 1")
 
             # categories
-            cursor = await sqlite.execute("SELECT code, name, emoji FROM categories")
-            rows = await cursor.fetchall()
-            for row in rows:
+            for row in data.get('categories', []):
                 await pg.execute(
                     "INSERT INTO categories (code, name, emoji) VALUES ($1, $2, $3)",
-                    row[0], row[1], row[2])
-            stats['categories'] = len(rows)
+                    row['code'], row['name'], row['emoji'])
+            stats['categories'] = len(data.get('categories', []))
 
             # workers
-            cursor = await sqlite.execute("SELECT telegram_id, name, registered_at FROM workers")
-            rows = await cursor.fetchall()
-            for row in rows:
+            for row in data.get('workers', []):
                 await pg.execute(
                     "INSERT INTO workers (telegram_id, name, registered_at) VALUES ($1, $2, $3)",
-                    row[0], row[1], parse_datetime(row[2]))
-            stats['workers'] = len(rows)
+                    row['telegram_id'], row['name'], parse_datetime(row['registered_at']))
+            stats['workers'] = len(data.get('workers', []))
 
             # price_list
-            cursor = await sqlite.execute("SELECT code, name, price, category_code, is_active FROM price_list")
-            rows = await cursor.fetchall()
-            for row in rows:
+            for row in data.get('price_list', []):
                 await pg.execute(
                     "INSERT INTO price_list (code, name, price, category_code, is_active) VALUES ($1, $2, $3, $4, $5)",
-                    row[0], row[1], row[2], row[3], bool(row[4]))
-            stats['prices'] = len(rows)
+                    row['code'], row['name'], row['price'], row['category_code'], row['is_active'])
+            stats['prices'] = len(data.get('price_list', []))
 
             # worker_categories
-            cursor = await sqlite.execute("SELECT worker_id, category_code FROM worker_categories")
-            rows = await cursor.fetchall()
-            for row in rows:
+            for row in data.get('worker_categories', []):
                 await pg.execute(
                     "INSERT INTO worker_categories (worker_id, category_code) VALUES ($1, $2)",
-                    row[0], row[1])
-            stats['worker_cats'] = len(rows)
+                    row['worker_id'], row['category_code'])
+            stats['worker_cats'] = len(data.get('worker_categories', []))
 
             # work_log
-            cursor = await sqlite.execute(
-                "SELECT worker_id, work_code, quantity, price_per_unit, total, work_date, created_at FROM work_log ORDER BY id")
-            rows = await cursor.fetchall()
-            for row in rows:
+            for row in data.get('work_log', []):
                 await pg.execute(
                     "INSERT INTO work_log (worker_id, work_code, quantity, price_per_unit, total, work_date, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7)",
-                    row[0], row[1], row[2], row[3], row[4],
-                    parse_date_local(row[5]), parse_datetime(row[6]))
-            stats['work_logs'] = len(rows)
+                    row['worker_id'], row['work_code'], row['quantity'], row['price_per_unit'], row['total'],
+                    parse_date_local(row['work_date']), parse_datetime(row['created_at']))
+            stats['work_logs'] = len(data.get('work_log', []))
 
             # advances
-            cursor = await sqlite.execute(
-                "SELECT worker_id, amount, comment, advance_date, created_at FROM advances ORDER BY id")
-            rows = await cursor.fetchall()
-            for row in rows:
+            for row in data.get('advances', []):
                 await pg.execute(
                     "INSERT INTO advances (worker_id, amount, comment, advance_date, created_at) VALUES ($1, $2, $3, $4, $5)",
-                    row[0], row[1], row[2] or '', parse_date_local(row[3]), parse_datetime(row[4]))
-            stats['advances'] = len(rows)
+                    row['worker_id'], row['amount'], row.get('comment', ''), 
+                    parse_date_local(row['advance_date']), parse_datetime(row['created_at']))
+            stats['advances'] = len(data.get('advances', []))
 
             # penalties
-            cursor = await sqlite.execute(
-                "SELECT worker_id, amount, reason, penalty_date, created_at FROM penalties ORDER BY id")
-            rows = await cursor.fetchall()
-            for row in rows:
+            for row in data.get('penalties', []):
                 await pg.execute(
                     "INSERT INTO penalties (worker_id, amount, reason, penalty_date, created_at) VALUES ($1, $2, $3, $4, $5)",
-                    row[0], row[1], row[2] or '', parse_date_local(row[3]), parse_datetime(row[4]))
-            stats['penalties'] = len(rows)
+                    row['worker_id'], row['amount'], row.get('reason', ''), 
+                    parse_date_local(row['penalty_date']), parse_datetime(row['created_at']))
+            stats['penalties'] = len(data.get('penalties', []))
 
             # reminder_settings
-            cursor = await sqlite.execute("SELECT * FROM reminder_settings WHERE id = 1")
-            settings = await cursor.fetchone()
-            if settings:
+            for row in data.get('reminder_settings', []):
                 await pg.execute("""
                     INSERT INTO reminder_settings 
                     (id, evening_hour, evening_minute, late_hour, late_minute,
                      report_hour, report_minute, evening_enabled, late_enabled, report_enabled)
                     VALUES (1, $1, $2, $3, $4, $5, $6, $7, $8, $9)
-                """, settings[1], settings[2], settings[3], settings[4],
-                    settings[5], settings[6], bool(settings[7]), bool(settings[8]), bool(settings[9]))
+                """, row['evening_hour'], row['evening_minute'], row['late_hour'], row['late_minute'],
+                    row['report_hour'], row['report_minute'], row['evening_enabled'], row['late_enabled'], row['report_enabled'])
 
-        await sqlite.close()
         os.unlink(tmp_path)
 
         await message.answer(
-            f"✅ Импорт завершён!\n\n"
+            f"✅ Импорт из JSON завершён!\n\n"
             f"📊 Перенесено:\n"
             f"👥 Работников: {stats['workers']}\n"
             f"📂 Категорий: {stats['categories']}\n"
@@ -520,7 +495,7 @@ async def import_from_sqlite(message: types.Message):
         )
 
     except Exception as e:
-        logging.error(f"Import error: {e}")
+        logging.error(f"JSON Import error: {e}")
         await message.answer(f"❌ Ошибка импорта: {e}")
 
 
