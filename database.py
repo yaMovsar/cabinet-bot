@@ -47,6 +47,7 @@ async def init_db():
                 code TEXT PRIMARY KEY,
                 name TEXT NOT NULL,
                 price REAL NOT NULL,
+                price_type TEXT NOT NULL DEFAULT 'unit',
                 category_code TEXT NOT NULL REFERENCES categories(code),
                 is_active BOOLEAN DEFAULT TRUE
             )
@@ -63,7 +64,7 @@ async def init_db():
                 id SERIAL PRIMARY KEY,
                 worker_id BIGINT NOT NULL REFERENCES workers(telegram_id),
                 work_code TEXT NOT NULL REFERENCES price_list(code),
-                quantity INTEGER NOT NULL,
+                quantity REAL NOT NULL,
                 price_per_unit REAL NOT NULL,
                 total REAL NOT NULL,
                 work_date DATE NOT NULL,
@@ -103,6 +104,16 @@ async def init_db():
                 late_enabled BOOLEAN DEFAULT TRUE,
                 report_enabled BOOLEAN DEFAULT TRUE
             )
+        """)
+        
+        # Миграции для существующей БД
+        await conn.execute("""
+            ALTER TABLE price_list 
+            ADD COLUMN IF NOT EXISTS price_type TEXT NOT NULL DEFAULT 'unit'
+        """)
+        await conn.execute("""
+            ALTER TABLE work_log
+            ALTER COLUMN quantity TYPE REAL
         """)
         
         count = await conn.fetchval("SELECT COUNT(*) FROM reminder_settings")
@@ -229,19 +240,19 @@ async def get_workers_in_category(category_code: str):
 
 # ==================== ПРАЙС-ЛИСТ ====================
 
-async def add_price_item(code: str, name: str, price: float, category_code: str):
+async def add_price_item(code: str, name: str, price: float, category_code: str, price_type: str = 'unit'):
     async with pool.acquire() as conn:
         await conn.execute("""
-            INSERT INTO price_list (code, name, price, category_code, is_active)
-            VALUES ($1, $2, $3, $4, TRUE)
-            ON CONFLICT (code) DO UPDATE SET name = $2, price = $3, category_code = $4, is_active = TRUE
-        """, code, name, price, category_code)
+            INSERT INTO price_list (code, name, price, price_type, category_code, is_active)
+            VALUES ($1, $2, $3, $4, $5, TRUE)
+            ON CONFLICT (code) DO UPDATE SET name = $2, price = $3, price_type = $4, category_code = $5, is_active = TRUE
+        """, code, name, price, price_type, category_code)
 
 
 async def get_price_list():
     async with pool.acquire() as conn:
         rows = await conn.fetch("""
-            SELECT pl.code, pl.name, pl.price, pl.category_code, c.name, c.emoji
+            SELECT pl.code, pl.name, pl.price, pl.price_type, pl.category_code, c.name, c.emoji
             FROM price_list pl
             JOIN categories c ON pl.category_code = c.code
             WHERE pl.is_active = TRUE
@@ -253,7 +264,7 @@ async def get_price_list():
 async def get_price_list_for_worker(worker_id: int):
     async with pool.acquire() as conn:
         rows = await conn.fetch("""
-            SELECT pl.code, pl.name, pl.price, pl.category_code
+            SELECT pl.code, pl.name, pl.price, pl.category_code, pl.price_type
             FROM price_list pl
             JOIN worker_categories wc ON pl.category_code = wc.category_code
             WHERE wc.worker_id = $1 AND pl.is_active = TRUE
@@ -281,7 +292,7 @@ async def delete_price_item_permanently(code: str) -> bool:
 
 # ==================== ЗАПИСИ О РАБОТЕ ====================
 
-async def add_work(worker_id: int, work_code: str, quantity: int, price: float, work_date=None) -> float:
+async def add_work(worker_id: int, work_code: str, quantity: float, price: float, work_date=None) -> float:
     work_date = parse_date(work_date)
     total = quantity * price
     async with pool.acquire() as conn:
@@ -399,7 +410,7 @@ async def get_today_entries(worker_id: int):
     async with pool.acquire() as conn:
         rows = await conn.fetch("""
             SELECT wl.id, pl.name, wl.quantity, wl.price_per_unit, wl.total, 
-                   wl.created_at::TEXT
+                   wl.created_at::TEXT, pl.price_type
             FROM work_log wl
             JOIN price_list pl ON wl.work_code = pl.code
             WHERE wl.worker_id = $1 AND wl.work_date = $2
@@ -413,7 +424,7 @@ async def get_worker_entries_by_date(worker_id: int, target_date):
     async with pool.acquire() as conn:
         rows = await conn.fetch("""
             SELECT wl.id, pl.name, wl.quantity, wl.price_per_unit, wl.total,
-                   wl.work_date::TEXT, wl.created_at::TEXT
+                   wl.work_date::TEXT, wl.created_at::TEXT, pl.price_type
             FROM work_log wl
             JOIN price_list pl ON wl.work_code = pl.code
             WHERE wl.worker_id = $1 AND wl.work_date = $2
@@ -426,7 +437,7 @@ async def get_worker_recent_entries(worker_id: int, limit: int = 20):
     async with pool.acquire() as conn:
         rows = await conn.fetch("""
             SELECT wl.id, pl.name, wl.quantity, wl.price_per_unit, wl.total,
-                   wl.work_date::TEXT, wl.created_at::TEXT
+                   wl.work_date::TEXT, wl.created_at::TEXT, pl.price_type
             FROM work_log wl
             JOIN price_list pl ON wl.work_code = pl.code
             WHERE wl.worker_id = $1
@@ -451,7 +462,7 @@ async def delete_entry_by_id(entry_id: int):
         return None
 
 
-async def update_entry_quantity(entry_id: int, new_quantity: int) -> bool:
+async def update_entry_quantity(entry_id: int, new_quantity: float) -> bool:
     async with pool.acquire() as conn:
         entry = await conn.fetchrow(
             "SELECT price_per_unit FROM work_log WHERE id = $1", entry_id)
@@ -468,7 +479,7 @@ async def get_entry_by_id(entry_id: int):
     async with pool.acquire() as conn:
         row = await conn.fetchrow("""
             SELECT wl.id, pl.name, wl.quantity, wl.price_per_unit, wl.total,
-                   wl.work_date::TEXT, wl.worker_id, w.name
+                   wl.work_date::TEXT, wl.worker_id, w.name, pl.price_type
             FROM work_log wl
             JOIN price_list pl ON wl.work_code = pl.code
             JOIN workers w ON wl.worker_id = w.telegram_id
@@ -485,14 +496,14 @@ async def get_worker_monthly_details(worker_id: int, year: int = None, month: in
     async with pool.acquire() as conn:
         rows = await conn.fetch("""
             SELECT pl.name, c.emoji, c.name, SUM(wl.quantity),
-                   wl.price_per_unit, SUM(wl.total)
+                   wl.price_per_unit, SUM(wl.total), pl.price_type
             FROM work_log wl
             JOIN price_list pl ON wl.work_code = pl.code
             JOIN categories c ON pl.category_code = c.code
             WHERE wl.worker_id = $1
               AND EXTRACT(YEAR FROM wl.work_date) = $2
               AND EXTRACT(MONTH FROM wl.work_date) = $3
-            GROUP BY pl.name, c.emoji, c.name, wl.price_per_unit
+            GROUP BY pl.name, c.emoji, c.name, wl.price_per_unit, pl.price_type
             ORDER BY c.name, pl.name
         """, worker_id, year, month)
         return [tuple(row) for row in rows]
@@ -508,14 +519,14 @@ async def get_all_workers_monthly_details(year: int = None, month: int = None):
             SELECT w.telegram_id, w.name,
                    pl.name, c.emoji, c.name,
                    SUM(wl.quantity), wl.price_per_unit, SUM(wl.total),
-                   COUNT(DISTINCT wl.work_date)
+                   COUNT(DISTINCT wl.work_date), pl.price_type
             FROM workers w
             LEFT JOIN work_log wl ON w.telegram_id = wl.worker_id
                 AND EXTRACT(YEAR FROM wl.work_date) = $1
                 AND EXTRACT(MONTH FROM wl.work_date) = $2
             LEFT JOIN price_list pl ON wl.work_code = pl.code
             LEFT JOIN categories c ON pl.category_code = c.code
-            GROUP BY w.telegram_id, w.name, pl.name, c.emoji, c.name, wl.price_per_unit
+            GROUP BY w.telegram_id, w.name, pl.name, c.emoji, c.name, wl.price_per_unit, pl.price_type
             ORDER BY w.name, c.name, pl.name
         """, year, month)
         return [tuple(row) for row in rows]
@@ -537,7 +548,8 @@ async def get_admin_monthly_detailed_all(year: int = None, month: int = None):
                 pl.name AS work_name,
                 wl.quantity,
                 wl.price_per_unit,
-                wl.total
+                wl.total,
+                pl.price_type
             FROM work_log wl
             JOIN workers w ON wl.worker_id = w.telegram_id
             JOIN price_list pl ON wl.work_code = pl.code
@@ -710,7 +722,7 @@ async def get_worker_entries_by_custom_date(worker_id: int, target_date):
     async with pool.acquire() as conn:
         rows = await conn.fetch("""
             SELECT wl.id, pl.name, c.name, c.emoji, wl.quantity,
-                   wl.price_per_unit, wl.total, wl.created_at::TEXT
+                   wl.price_per_unit, wl.total, wl.created_at::TEXT, pl.price_type
             FROM work_log wl
             JOIN price_list pl ON wl.work_code = pl.code
             JOIN categories c ON pl.category_code = c.code

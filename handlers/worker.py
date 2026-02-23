@@ -212,32 +212,56 @@ async def work_back_to_categories(callback: types.CallbackQuery, state: FSMConte
 async def work_chosen(callback: types.CallbackQuery, state: FSMContext):
     code = callback.data.split(":")[1]
     items = await get_price_list_for_worker(callback.from_user.id)
-    info = next(((c, n, p) for c, n, p, cat in items if c == code), None)
+    # код, название, цена, категория, тип_цены
+    info = next(((c, n, p, cat, pt) for c, n, p, cat, pt in items if c == code), None)
     if not info:
         await callback.answer("Не найдено", show_alert=True)
         return
-    await state.update_data(work_info={"code": info[0], "name": info[1], "price": info[2]})
+    
+    price_type = info[4]  # 'unit' или 'square'
+    await state.update_data(work_info={
+        "code": info[0], 
+        "name": info[1], 
+        "price": info[2], 
+        "price_type": price_type
+    })
+    
     data = await state.get_data()
-    await callback.message.edit_text(
-        f"📅 Дата: {format_date(data['work_date'])}\n"
-        f"{info[1]} ({int(info[2])} руб/шт)\n\nВведите количество:"
-    )
+    
+    if price_type == 'square':
+        prompt = f"📅 Дата: {format_date(data['work_date'])}\n" \
+                 f"{info[1]} ({int(info[2])} руб/м²)\n\nВведите площадь (м²):"
+    else:
+        prompt = f"📅 Дата: {format_date(data['work_date'])}\n" \
+                 f"{info[1]} ({int(info[2])} руб/шт)\n\nВведите количество:"
+    
+    await callback.message.edit_text(prompt)
     await state.set_state(WorkEntry.entering_quantity)
     await callback.answer()
 
 
 @router.message(WorkEntry.entering_quantity)
 async def quantity_entered(message: types.Message, state: FSMContext):
+    data = await state.get_data()
+    info = data["work_info"]
+    price_type = info.get("price_type", "unit")
+    
     try:
-        qty = int(message.text)
+        # Для square разрешаем дробные числа
+        if price_type == 'square':
+            qty = float(message.text.replace(',', '.'))
+        else:
+            qty = int(message.text)
+        
         if qty <= 0:
             raise ValueError
     except ValueError:
-        await message.answer("❌ Введите положительное число!")
+        if price_type == 'square':
+            await message.answer("❌ Введите положительное число!\nПример: 12.5")
+        else:
+            await message.answer("❌ Введите положительное целое число!")
         return
 
-    data = await state.get_data()
-    info = data["work_info"]
     total = qty * info["price"]
 
     if total > 10000:
@@ -247,10 +271,14 @@ async def quantity_entered(message: types.Message, state: FSMContext):
             [InlineKeyboardButton(text="✏️ Изменить количество", callback_data="confirm_large:edit")],
             [InlineKeyboardButton(text="❌ Отмена", callback_data="confirm_large:cancel")]
         ]
+        
+        unit_label = "м²" if price_type == 'square' else "шт"
+        qty_display = f"{qty:.2f}" if price_type == 'square' else str(int(qty))
+        
         await message.answer(
             f"⚠️ Внимание! Большая сумма!\n\n"
             f"📅 Дата: {format_date(data.get('work_date', date.today().isoformat()))}\n"
-            f"📦 {info['name']} x {qty} = {int(total)} руб\n\nВсё верно?",
+            f"📦 {info['name']} x {qty_display} {unit_label} = {int(total)} руб\n\nВсё верно?",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
         )
         await state.set_state(WorkEntry.confirming_large)
@@ -268,7 +296,14 @@ async def confirm_large_entry(callback: types.CallbackQuery, state: FSMContext):
         await callback.message.delete()
         await save_work_entry(callback.message, state, qty, user=callback.from_user)
     elif action == "edit":
-        await callback.message.edit_text("Введите правильное количество:")
+        data = await state.get_data()
+        info = data["work_info"]
+        price_type = info.get("price_type", "unit")
+        
+        if price_type == 'square':
+            await callback.message.edit_text("Введите правильную площадь (м²):")
+        else:
+            await callback.message.edit_text("Введите правильное количество:")
         await state.set_state(WorkEntry.entering_quantity)
     elif action == "cancel":
         await callback.message.edit_text("❌ Отменено.")
@@ -283,6 +318,7 @@ async def save_work_entry(message, state, qty, user=None):
     data = await state.get_data()
     info = data["work_info"]
     work_date = to_date_str(data.get("work_date", date.today().isoformat()))
+    price_type = info.get("price_type", "unit")
 
     total = await add_work(user.id, info["code"], qty, info["price"], work_date)
     daily = await get_daily_total(user.id, work_date)
@@ -293,10 +329,13 @@ async def save_work_entry(message, state, qty, user=None):
         [InlineKeyboardButton(text="🏠 В меню", callback_data="back_to_menu")],
     ])
 
+    unit_label = "м²" if price_type == 'square' else "шт"
+    qty_display = f"{qty:.2f}" if price_type == 'square' else str(int(qty))
+
     await message.answer(
         f"✅ Записано!\n\n"
         f"📅 Дата: {format_date(work_date)}\n"
-        f"📦 {info['name']} x {qty} = {int(total)} руб\n"
+        f"📦 {info['name']} x {qty_display} {unit_label} = {int(total)} руб\n"
         f"💰 За этот день: {int(day_total)} руб",
         reply_markup=buttons
     )
@@ -306,7 +345,7 @@ async def save_work_entry(message, state, qty, user=None):
             f"📬 Новая запись!\n\n"
             f"👤 {user.full_name}\n"
             f"📅 {format_date(work_date)}\n"
-            f"📦 {info['name']} x {qty} = {int(total)} руб\n"
+            f"📦 {info['name']} x {qty_display} {unit_label} = {int(total)} руб\n"
             f"💰 За этот день: {int(day_total)} руб"
         )
         try:
@@ -434,9 +473,10 @@ async def import_from_json(message: types.Message):
 
             # price_list
             for row in data.get('price_list', []):
+                price_type = row.get('price_type', 'unit')  # Совместимость со старыми JSON
                 await pg.execute(
-                    "INSERT INTO price_list (code, name, price, category_code, is_active) VALUES ($1, $2, $3, $4, $5)",
-                    row['code'], row['name'], row['price'], row['category_code'], row['is_active'])
+                    "INSERT INTO price_list (code, name, price, price_type, category_code, is_active) VALUES ($1, $2, $3, $4, $5, $6)",
+                    row['code'], row['name'], row['price'], price_type, row['category_code'], row.get('is_active', True))
             stats['prices'] = len(data.get('price_list', []))
 
             # worker_categories
@@ -595,15 +635,17 @@ async def show_entries_for_date(message, state, user_id, target_date, edit=False
     buttons = []
     day_total = 0
 
-    for entry_id, name, cat_name, cat_emoji, qty, price, total, created in entries:
+    for entry_id, name, cat_name, cat_emoji, qty, price, total, created, price_type in entries:
         time_str = created[11:16] if len(created) > 16 else ""
-        text += f"{cat_emoji} {name} x {int(qty)} = {int(total)} руб ({time_str})\n"
+        unit_label = "м²" if price_type == 'square' else "шт"
+        qty_display = f"{qty:.2f}" if price_type == 'square' else str(int(qty))
+        
+        text += f"{cat_emoji} {name} x {qty_display} {unit_label} = {int(total)} руб ({time_str})\n"
         day_total += total
 
-        # ✅ Исправлено — используем is_today()
         if is_today(target_date):
             buttons.append([InlineKeyboardButton(
-                text=f"❌ {name} x {int(qty)} ({int(total)} руб)",
+                text=f"❌ {name} x {qty_display} {unit_label} ({int(total)} руб)",
                 callback_data=f"mydel:{entry_id}"
             )])
 
@@ -642,6 +684,11 @@ async def my_entry_chosen(callback: types.CallbackQuery, state: FSMContext):
         await callback.answer("Не ваша запись!", show_alert=True)
         await state.clear()
         return
+    
+    price_type = entry[8]
+    unit_label = "м²" if price_type == 'square' else "шт"
+    qty_display = f"{entry[2]:.2f}" if price_type == 'square' else str(int(entry[2]))
+    
     await state.update_data(entry_id=entry_id, entry_name=entry[1],
                             entry_qty=entry[2], entry_total=entry[4])
     buttons = [
@@ -649,7 +696,7 @@ async def my_entry_chosen(callback: types.CallbackQuery, state: FSMContext):
         [InlineKeyboardButton(text="❌ Отмена", callback_data="myconf:no")]
     ]
     await callback.message.edit_text(
-        f"⚠️ Удалить?\n\n📦 {entry[1]} x {int(entry[2])} = {int(entry[4])} руб",
+        f"⚠️ Удалить?\n\n📦 {entry[1]} x {qty_display} {unit_label} = {int(entry[4])} руб",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
     )
     await state.set_state(WorkerDeleteEntry.confirming)

@@ -1,0 +1,1651 @@
+{
+  "categories": [
+    {
+      "code": "chpu",
+      "name": "ЧПУ",
+      "emoji": "🤖"
+    },
+    {
+      "code": "malar",
+      "name": "Маляр",
+      "emoji": "🎨"
+    },
+    {
+      "code": "shlifovka",
+      "name": "Шлифовка",
+      "emoji": "🪵"
+    },
+    {
+      "code": "uvakovka_shkafi",
+      "name": "Упаковка шкафов",
+      "emoji": "📦"
+    },
+    {
+      "code": "uvakovka_dveri",
+      "name": "Упаковка Двери",
+      "emoji": "🚪"
+    },
+    {
+      "code": "krovati",
+      "name": "Кровати",
+      "emoji": "🛏"
+    },
+    {
+      "code": "komodi_tumbi",
+      "name": "Комоды и тумбы",
+      "emoji": "📦"
+    },
+    {
+      "code": "rezka_karniz",
+      "name": "Резка и упаковка карнизов",
+      "emoji": "📦"
+    },
+    {
+      "code": "rezka",
+      "name": "Резка",
+      "emoji": "🪚"
+    },
+    {
+      "code": "dirki_dveri",
+      "name": "Отверстия для петель",
+      "emoji": "🕳"
+    },
+    {
+      "code": "kromka",
+      "name": "Кромка",
+      "emoji": "⚡️"
+    },
+    {
+      "code": "u_krovati",
+      "name": "Упаковка кровати",
+      "emoji": "🛌"
+    },
+    {
+      "code": "shlifovka_2",
+      "name": "Шлифовка 2",
+      "emoji": "🚪"
+    },
+    {
+      "code": "shlifovka_zakaz",
+      "name": "Шлифовка заказные",
+      "emoji": "🚪"
+    },
+    {
+      "code": "ramki_profil",
+      "name": "Профиль рамки",
+      "emoji": "🗡️"
+    },
+    {
+      "code": "bageti",
+      "name": "Багеты",
+      "emoji": "🖼"
+    }
+  ],
+  "workers": [
+    {
+      "telegram_id": 741468078,
+      "name": "Movsar",
+      "registered_at": "2026-02-21T14:43:43"
+    },
+    {
+      "telegram_id": 755940234,
+      "name": "Айдамиров Бислан",
+      "registered_at": "2026-02-21T14:30:45"
+    },
+    {
+      "telegram_id": 1766500515,
+      "name": "Ruslan",
+      "registered_at": "2026-02-21T14:43:49"
+    },
+    {
+      "telegram_id": 1805718550,
+      "name": "IB RA",
+      "registered_at": "2026-02-21T14:49:27"
+    },
+    {
+      "telegram_id": 6259950900,
+      "name": "Арс",
+      "registered_at": "2026-02-21T15:05:20"
+    },
+    {
+      "telegram_id": 7003154887,
+      "name": "М",
+      "registered_at": "2026-02-21T14:35:55"
+    },
+    {
+      "telegram_id": 7792815764,
+      "name": "Менеджер по продажам",
+      "registered_at": "2026-02-21T20:25:06"
+    },
+    {
+      "telegram_id": 8224128437,
+      "name": "Адлан Джанмурадов",
+      "registered_at": "2026-02-21T14:38:36"
+    },
+    {
+      "telegram_id": 8284552595,
+      "name": "ᴬᴸ",
+      "registered_at": "2026-02-21T14:56:58"
+    },
+    {
+      "telegram_id": 8552868080,
+      "name": "Zz",
+      "registered_at": "2026-02-21T16:03:15"
+    },
+    {
+      "telegram_id": 1157342359,
+      "name": "Нажмудин резка",
+      "registered_at": "2026-02-22T11:42:33.494328"
+    },
+    {
+      "telegram_id": 6778766804,
+      "name": "Хусейн - кромка",
+      "registered_at": "2026-02-21T14:27:34"
+    },
+    {
+      "telegram_id": 5469235340,
+      "name": "Абакар",
+      "registered_at": "2026-02-22T12:23:12.749467"
+    },
+    {
+      "telegram_id": 5648922189,
+      "name": "Имран шлифовка",
+      "registered_at": "2026-02-22T12:33:13.705547"
+    },
+    {
+      "telegram_id": 6933878323,
+      "name": "Амир упаковки",
+      "registered_at": "2026-02-22T12:47:08.153271"
+    },
+    {
+      "telegram_id": 5240540130,
+      "name": "Адлан упаковки",
+      "registered_at": "2026-02-22T12:52:58.563517"
+    },
+    {
+      "telegram_id": 1257501628,
+      "name": "Аюб ЧПУ",
+      "registered_at": "2026-02-22T12:56:28.388688"
+    },
+    {
+      "telegram_id": 8340841280,
+      "name": "Адам Шлифовка",
+      "registered_at": "2026-02-21T17:36:01"
+    },
+    {
+      "telegram_id": 6199592085,
+      "name": "Ахмад упаковки",
+      "registered_at": "2026-02-21T15:10:30"
+    },
+    {
+      "telegram_id": 8431686134,
+      "name": "Аюб маляр",
+      "registered_at": "2026-02-23T07:52:59.314388"
+    },
+    {
+      "telegram_id": 5719833432,
+      "name": "Али шлифовка",
+      "registered_at": "2026-02-23T08:10:28.696548"
+    },
+    {
+      "telegram_id": 8547246368,
+      "name": "Шамхан",
+      "registered_at": "2026-02-23T08:15:22.288984"
+    },
+    {
+      "telegram_id": 6865650357,
+      "name": "Эльмурза",
+      "registered_at": "2026-02-21T19:43:05"
+    }
+  ],
+  "price_list": [
+    {
+      "code": "aided",
+      "name": "Kiss",
+      "price": 33.0,
+      "category_code": "chpu",
+      "is_active": false,
+      "unit": "шт"
+    },
+    {
+      "code": "antesol_4",
+      "name": "Антресоль 4",
+      "price": 100.0,
+      "category_code": "uvakovka_shkafi",
+      "is_active": true,
+      "unit": "шт"
+    },
+    {
+      "code": "premium",
+      "name": "Премиум",
+      "price": 200.0,
+      "category_code": "uvakovka_shkafi",
+      "is_active": true,
+      "unit": "шт"
+    },
+    {
+      "code": "vidvij",
+      "name": "Выдвиж. ящик",
+      "price": 100.0,
+      "category_code": "uvakovka_shkafi",
+      "is_active": true,
+      "unit": "шт"
+    },
+    {
+      "code": "dirki_20",
+      "name": "Петли - 20 -",
+      "price": 20.0,
+      "category_code": "dirki_dveri",
+      "is_active": true,
+      "unit": "шт"
+    },
+    {
+      "code": "dirki_25",
+      "name": "Петли - 25 -",
+      "price": 25.0,
+      "category_code": "dirki_dveri",
+      "is_active": true,
+      "unit": "шт"
+    },
+    {
+      "code": "dirki_30",
+      "name": "Петли - 30 -",
+      "price": 30.0,
+      "category_code": "dirki_dveri",
+      "is_active": true,
+      "unit": "шт"
+    },
+    {
+      "code": "dior_dveri",
+      "name": "Диор Двери",
+      "price": 30.0,
+      "category_code": "bageti",
+      "is_active": true,
+      "unit": "шт"
+    },
+    {
+      "code": "dior_vidvij",
+      "name": "Диор выдвиж",
+      "price": 30.0,
+      "category_code": "bageti",
+      "is_active": true,
+      "unit": "шт"
+    },
+    {
+      "code": "premiun_b",
+      "name": "Премиум Бол",
+      "price": 50.0,
+      "category_code": "bageti",
+      "is_active": true,
+      "unit": "шт"
+    },
+    {
+      "code": "premium_s",
+      "name": "Премиум Сред.",
+      "price": 50.0,
+      "category_code": "bageti",
+      "is_active": true,
+      "unit": "шт"
+    },
+    {
+      "code": "premium_m",
+      "name": "Премиум мал",
+      "price": 50.0,
+      "category_code": "bageti",
+      "is_active": true,
+      "unit": "шт"
+    },
+    {
+      "code": "komod_tumbi",
+      "name": "Комод и тумбы",
+      "price": 30.0,
+      "category_code": "bageti",
+      "is_active": true,
+      "unit": "шт"
+    },
+    {
+      "code": "rezk_upakovka_karnizov",
+      "name": "Резка и упаковка карнизов",
+      "price": 50.0,
+      "category_code": "rezka_karniz",
+      "is_active": true,
+      "unit": "шт"
+    },
+    {
+      "code": "kromka_1",
+      "name": "Кромка",
+      "price": 800.0,
+      "category_code": "kromka",
+      "is_active": true,
+      "unit": "шт"
+    },
+    {
+      "code": "rezka_hdf",
+      "name": "ХДФ",
+      "price": 100.0,
+      "category_code": "rezka",
+      "is_active": true,
+      "unit": "шт"
+    },
+    {
+      "code": "rezka_mdf",
+      "name": "ЛДСП / МДФ",
+      "price": 200.0,
+      "category_code": "rezka",
+      "is_active": true,
+      "unit": "шт"
+    },
+    {
+      "code": "shlifovka_karnizi",
+      "name": "Карнизы",
+      "price": 75.0,
+      "category_code": "shlifovka",
+      "is_active": true,
+      "unit": "шт"
+    },
+    {
+      "code": "shlifivka_planki",
+      "name": "Шлифовка планки",
+      "price": 50.0,
+      "category_code": "shlifovka",
+      "is_active": true,
+      "unit": "шт"
+    },
+    {
+      "code": "ugli_b",
+      "name": "Углы бол",
+      "price": 25.0,
+      "category_code": "shlifovka",
+      "is_active": true,
+      "unit": "шт"
+    },
+    {
+      "code": "ugli_mal",
+      "name": "Углы мал",
+      "price": 15.0,
+      "category_code": "shlifovka",
+      "is_active": true,
+      "unit": "шт"
+    },
+    {
+      "code": "izolator",
+      "name": "Изолятор",
+      "price": 10.0,
+      "category_code": "shlifovka",
+      "is_active": true,
+      "unit": "шт"
+    },
+    {
+      "code": "malar5",
+      "name": "Краска антрес.",
+      "price": 30.0,
+      "category_code": "malar",
+      "is_active": true,
+      "unit": "шт"
+    },
+    {
+      "code": "aisha_c",
+      "name": "Айша С - обр",
+      "price": 200.0,
+      "category_code": "shlifovka",
+      "is_active": true,
+      "unit": "шт"
+    },
+    {
+      "code": "antresol",
+      "name": "Антресоль",
+      "price": 40.0,
+      "category_code": "shlifovka",
+      "is_active": true,
+      "unit": "шт"
+    },
+    {
+      "code": "mdf",
+      "name": "МДФ",
+      "price": 300.0,
+      "category_code": "chpu",
+      "is_active": true,
+      "unit": "шт"
+    },
+    {
+      "code": "lsdp",
+      "name": "ЛДСП",
+      "price": 200.0,
+      "category_code": "chpu",
+      "is_active": true,
+      "unit": "шт"
+    },
+    {
+      "code": "ldsp_rez",
+      "name": "Резной ЛДСП",
+      "price": 200.0,
+      "category_code": "chpu",
+      "is_active": true,
+      "unit": "шт"
+    },
+    {
+      "code": "antresol_6",
+      "name": "Антресоль 6",
+      "price": 150.0,
+      "category_code": "uvakovka_shkafi",
+      "is_active": true,
+      "unit": "шт"
+    },
+    {
+      "code": "aisha_g",
+      "name": "Айша Г - обр",
+      "price": 240.0,
+      "category_code": "shlifovka",
+      "is_active": true,
+      "unit": "шт"
+    },
+    {
+      "code": "dior_komplect",
+      "name": "Диор комплект",
+      "price": 320.0,
+      "category_code": "shlifovka",
+      "is_active": true,
+      "unit": "шт"
+    },
+    {
+      "code": "premium_bol",
+      "name": "Премиум Бол",
+      "price": 225.0,
+      "category_code": "shlifovka",
+      "is_active": true,
+      "unit": "шт"
+    },
+    {
+      "code": "aisha_4",
+      "name": "Айша 4",
+      "price": 350.0,
+      "category_code": "uvakovka_shkafi",
+      "is_active": true,
+      "unit": "шт"
+    },
+    {
+      "code": "aisha_6",
+      "name": "Айша 6",
+      "price": 450.0,
+      "category_code": "uvakovka_shkafi",
+      "is_active": true,
+      "unit": "шт"
+    },
+    {
+      "code": "u_dior",
+      "name": "Диор",
+      "price": 250.0,
+      "category_code": "uvakovka_shkafi",
+      "is_active": true,
+      "unit": "шт"
+    },
+    {
+      "code": "u_aisha2",
+      "name": "Айша 2",
+      "price": 200.0,
+      "category_code": "uvakovka_shkafi",
+      "is_active": true,
+      "unit": "шт"
+    },
+    {
+      "code": "u_prixoj6",
+      "name": "Прихожая 6",
+      "price": 1.0,
+      "category_code": "uvakovka_shkafi",
+      "is_active": true,
+      "unit": "шт"
+    },
+    {
+      "code": "u_prixoj4",
+      "name": "Прихожая 4",
+      "price": 1.0,
+      "category_code": "uvakovka_shkafi",
+      "is_active": true,
+      "unit": "шт"
+    },
+    {
+      "code": "u_penalaisha",
+      "name": "Пенал Айша",
+      "price": 1.0,
+      "category_code": "uvakovka_shkafi",
+      "is_active": true,
+      "unit": "шт"
+    },
+    {
+      "code": "dirki_10",
+      "name": "Дырки 10",
+      "price": 10.0,
+      "category_code": "dirki_dveri",
+      "is_active": true,
+      "unit": "шт"
+    },
+    {
+      "code": "u_krovat",
+      "name": "Упаковка кровати",
+      "price": 20.0,
+      "category_code": "u_krovati",
+      "is_active": true,
+      "unit": "шт"
+    },
+    {
+      "code": "krovati_2500",
+      "name": "Кровати 2500",
+      "price": 2450.0,
+      "category_code": "krovati",
+      "is_active": true,
+      "unit": "шт"
+    },
+    {
+      "code": "krovati_2000",
+      "name": "Кровать 2000",
+      "price": 1950.0,
+      "category_code": "krovati",
+      "is_active": true,
+      "unit": "шт"
+    },
+    {
+      "code": "furniture_krovati",
+      "name": "Фурнитура кровати",
+      "price": 50.0,
+      "category_code": "krovati",
+      "is_active": true,
+      "unit": "шт"
+    },
+    {
+      "code": "antresol_2",
+      "name": "Антресоль",
+      "price": 30.0,
+      "category_code": "shlifovka_2",
+      "is_active": true,
+      "unit": "шт"
+    },
+    {
+      "code": "turkey",
+      "name": "Турция",
+      "price": 130.0,
+      "category_code": "shlifovka_2",
+      "is_active": true,
+      "unit": "шт"
+    },
+    {
+      "code": "planki_25",
+      "name": "Планки",
+      "price": 25.0,
+      "category_code": "shlifovka_2",
+      "is_active": true,
+      "unit": "шт"
+    },
+    {
+      "code": "planki_50",
+      "name": "Планки",
+      "price": 50.0,
+      "category_code": "shlifovka_2",
+      "is_active": true,
+      "unit": "шт"
+    },
+    {
+      "code": "maryam",
+      "name": "Дверь Марьям",
+      "price": 130.0,
+      "category_code": "shlifovka_2",
+      "is_active": true,
+      "unit": "шт"
+    },
+    {
+      "code": "bageti",
+      "name": "Багеты",
+      "price": 10.0,
+      "category_code": "shlifovka_2",
+      "is_active": true,
+      "unit": "шт"
+    },
+    {
+      "code": "zakaz1",
+      "name": "Без узора",
+      "price": 250.0,
+      "category_code": "shlifovka_zakaz",
+      "is_active": true,
+      "unit": "шт"
+    },
+    {
+      "code": "zakaz2",
+      "name": "С узором",
+      "price": 300.0,
+      "category_code": "shlifovka_zakaz",
+      "is_active": true,
+      "unit": "шт"
+    },
+    {
+      "code": "zakaz3",
+      "name": "С багетами",
+      "price": 400.0,
+      "category_code": "shlifovka_zakaz",
+      "is_active": true,
+      "unit": "шт"
+    },
+    {
+      "code": "zakaz4",
+      "name": "Узор + багет",
+      "price": 100.0,
+      "category_code": "shlifovka_zakaz",
+      "is_active": true,
+      "unit": "шт"
+    },
+    {
+      "code": "ramki",
+      "name": "Рамка большая",
+      "price": 250.0,
+      "category_code": "ramki_profil",
+      "is_active": true,
+      "unit": "шт"
+    },
+    {
+      "code": "ramki_mal",
+      "name": "Рамки маленькие",
+      "price": 200.0,
+      "category_code": "ramki_profil",
+      "is_active": true,
+      "unit": "шт"
+    },
+    {
+      "code": "malar2",
+      "name": "Тур грунт мал",
+      "price": 20.0,
+      "category_code": "malar",
+      "is_active": true,
+      "unit": "шт"
+    },
+    {
+      "code": "malar7",
+      "name": "Комоды краска + грунт",
+      "price": 200.0,
+      "category_code": "malar",
+      "is_active": true,
+      "unit": "шт"
+    },
+    {
+      "code": "ramki111",
+      "name": "Рамки",
+      "price": 100.0,
+      "category_code": "shlifovka_2",
+      "is_active": true,
+      "unit": "шт"
+    },
+    {
+      "code": "malar3",
+      "name": "Грунт карниз + планки",
+      "price": 20.0,
+      "category_code": "malar",
+      "is_active": true,
+      "unit": "шт"
+    },
+    {
+      "code": "aisha_antresol",
+      "name": "Айша антр.",
+      "price": 50.0,
+      "category_code": "bageti",
+      "is_active": true,
+      "unit": "шт"
+    },
+    {
+      "code": "antresol_g",
+      "name": "Антр. Г - обр",
+      "price": 50.0,
+      "category_code": "bageti",
+      "is_active": true,
+      "unit": "шт"
+    },
+    {
+      "code": "aisha_standart",
+      "name": "Айша станд.",
+      "price": 50.0,
+      "category_code": "bageti",
+      "is_active": true,
+      "unit": "шт"
+    },
+    {
+      "code": "dior_antresol",
+      "name": "Диор Антр.",
+      "price": 30.0,
+      "category_code": "bageti",
+      "is_active": true,
+      "unit": "шт"
+    },
+    {
+      "code": "malar4",
+      "name": "Краска Турция",
+      "price": 60.0,
+      "category_code": "malar",
+      "is_active": true,
+      "unit": "шт"
+    },
+    {
+      "code": "malar8",
+      "name": "Тумба краска грунт",
+      "price": 250.0,
+      "category_code": "malar",
+      "is_active": true,
+      "unit": "шт"
+    },
+    {
+      "code": "malar1",
+      "name": "Турция грунт",
+      "price": 40.0,
+      "category_code": "malar",
+      "is_active": true,
+      "unit": "шт"
+    },
+    {
+      "code": "zakaznie",
+      "name": "Заказ без узора",
+      "price": 250.0,
+      "category_code": "shlifovka_2",
+      "is_active": true,
+      "unit": "шт"
+    },
+    {
+      "code": "maryam_b",
+      "name": "Марьям бол",
+      "price": 250.0,
+      "category_code": "shlifovka_2",
+      "is_active": true,
+      "unit": "шт"
+    },
+    {
+      "code": "dveri_bol",
+      "name": "Дверь бол",
+      "price": 100.0,
+      "category_code": "uvakovka_dveri",
+      "is_active": true,
+      "unit": "шт"
+    },
+    {
+      "code": "dveri_m",
+      "name": "Дверь мал",
+      "price": 50.0,
+      "category_code": "uvakovka_dveri",
+      "is_active": true,
+      "unit": "шт"
+    },
+    {
+      "code": "zakaz6",
+      "name": "Рамки заказ",
+      "price": 250.0,
+      "category_code": "shlifovka_zakaz",
+      "is_active": true,
+      "unit": "шт"
+    },
+    {
+      "code": "premium_komplect",
+      "name": "Премиум комп.",
+      "price": 1220.0,
+      "category_code": "shlifovka",
+      "is_active": true,
+      "unit": "шт"
+    },
+    {
+      "code": "restavrazia_b",
+      "name": "Реставрац. Бол",
+      "price": 100.0,
+      "category_code": "shlifovka",
+      "is_active": true,
+      "unit": "шт"
+    },
+    {
+      "code": "restavrazia_m",
+      "name": "Реставрац. мал",
+      "price": 25.0,
+      "category_code": "shlifovka",
+      "is_active": true,
+      "unit": "шт"
+    }
+  ],
+  "worker_categories": [
+    {
+      "worker_id": 741468078,
+      "category_code": "uvakovka_shkafi"
+    },
+    {
+      "worker_id": 741468078,
+      "category_code": "bageti"
+    },
+    {
+      "worker_id": 6778766804,
+      "category_code": "kromka"
+    },
+    {
+      "worker_id": 1157342359,
+      "category_code": "rezka"
+    },
+    {
+      "worker_id": 8340841280,
+      "category_code": "shlifovka"
+    },
+    {
+      "worker_id": 5469235340,
+      "category_code": "rezka_karniz"
+    },
+    {
+      "worker_id": 5469235340,
+      "category_code": "bageti"
+    },
+    {
+      "worker_id": 5469235340,
+      "category_code": "uvakovka_dveri"
+    },
+    {
+      "worker_id": 5469235340,
+      "category_code": "shlifovka"
+    },
+    {
+      "worker_id": 5648922189,
+      "category_code": "shlifovka"
+    },
+    {
+      "worker_id": 6933878323,
+      "category_code": "uvakovka_shkafi"
+    },
+    {
+      "worker_id": 5240540130,
+      "category_code": "uvakovka_shkafi"
+    },
+    {
+      "worker_id": 1257501628,
+      "category_code": "chpu"
+    },
+    {
+      "worker_id": 1257501628,
+      "category_code": "dirki_dveri"
+    },
+    {
+      "worker_id": 741468078,
+      "category_code": "shlifovka"
+    },
+    {
+      "worker_id": 7792815764,
+      "category_code": "uvakovka_shkafi"
+    },
+    {
+      "worker_id": 1257501628,
+      "category_code": "u_krovati"
+    },
+    {
+      "worker_id": 6199592085,
+      "category_code": "uvakovka_shkafi"
+    },
+    {
+      "worker_id": 7003154887,
+      "category_code": "shlifovka_zakaz"
+    },
+    {
+      "worker_id": 7003154887,
+      "category_code": "shlifovka_2"
+    },
+    {
+      "worker_id": 8431686134,
+      "category_code": "malar"
+    },
+    {
+      "worker_id": 8224128437,
+      "category_code": "shlifovka_2"
+    },
+    {
+      "worker_id": 8224128437,
+      "category_code": "uvakovka_dveri"
+    },
+    {
+      "worker_id": 8224128437,
+      "category_code": "ramki_profil"
+    },
+    {
+      "worker_id": 5719833432,
+      "category_code": "shlifovka_2"
+    },
+    {
+      "worker_id": 8547246368,
+      "category_code": "shlifovka_2"
+    },
+    {
+      "worker_id": 741468078,
+      "category_code": "chpu"
+    }
+  ],
+  "work_log": [
+    {
+      "id": 1,
+      "worker_id": 8340841280,
+      "work_code": "aisha_c",
+      "quantity": 5,
+      "price_per_unit": 200.0,
+      "total": 1000.0,
+      "work_date": "2026-02-22",
+      "created_at": "2026-02-22T12:50:22.177222"
+    },
+    {
+      "id": 2,
+      "worker_id": 8340841280,
+      "work_code": "antresol",
+      "quantity": 2,
+      "price_per_unit": 40.0,
+      "total": 80.0,
+      "work_date": "2026-02-22",
+      "created_at": "2026-02-22T12:50:48.656609"
+    },
+    {
+      "id": 3,
+      "worker_id": 6778766804,
+      "work_code": "kromka_1",
+      "quantity": 29,
+      "price_per_unit": 800.0,
+      "total": 23200.0,
+      "work_date": "2026-02-22",
+      "created_at": "2026-02-22T13:53:26.152457"
+    },
+    {
+      "id": 4,
+      "worker_id": 5469235340,
+      "work_code": "rezk_upakovka_karnizov",
+      "quantity": 319,
+      "price_per_unit": 50.0,
+      "total": 15950.0,
+      "work_date": "2026-02-22",
+      "created_at": "2026-02-22T15:33:00.788002"
+    },
+    {
+      "id": 5,
+      "worker_id": 5469235340,
+      "work_code": "aisha_standart",
+      "quantity": 135,
+      "price_per_unit": 50.0,
+      "total": 6750.0,
+      "work_date": "2026-02-22",
+      "created_at": "2026-02-22T15:33:44.116266"
+    },
+    {
+      "id": 6,
+      "worker_id": 5469235340,
+      "work_code": "aisha_antresol",
+      "quantity": 71,
+      "price_per_unit": 50.0,
+      "total": 3550.0,
+      "work_date": "2026-02-22",
+      "created_at": "2026-02-22T15:34:24.035375"
+    },
+    {
+      "id": 7,
+      "worker_id": 5469235340,
+      "work_code": "dveri_bol",
+      "quantity": 214,
+      "price_per_unit": 100.0,
+      "total": 21400.0,
+      "work_date": "2026-02-22",
+      "created_at": "2026-02-22T15:34:48.615486"
+    },
+    {
+      "id": 8,
+      "worker_id": 5469235340,
+      "work_code": "dveri_m",
+      "quantity": 102,
+      "price_per_unit": 50.0,
+      "total": 5100.0,
+      "work_date": "2026-02-22",
+      "created_at": "2026-02-22T15:35:07.480238"
+    },
+    {
+      "id": 9,
+      "worker_id": 5469235340,
+      "work_code": "restavrazia_b",
+      "quantity": 3,
+      "price_per_unit": 100.0,
+      "total": 300.0,
+      "work_date": "2026-02-22",
+      "created_at": "2026-02-22T15:35:31.027105"
+    },
+    {
+      "id": 10,
+      "worker_id": 5469235340,
+      "work_code": "ugli_mal",
+      "quantity": 33,
+      "price_per_unit": 15.0,
+      "total": 495.0,
+      "work_date": "2026-02-22",
+      "created_at": "2026-02-22T15:35:46.816337"
+    },
+    {
+      "id": 11,
+      "worker_id": 5469235340,
+      "work_code": "ugli_b",
+      "quantity": 20,
+      "price_per_unit": 25.0,
+      "total": 500.0,
+      "work_date": "2026-02-22",
+      "created_at": "2026-02-22T15:35:58.689539"
+    },
+    {
+      "id": 12,
+      "worker_id": 5469235340,
+      "work_code": "shlifivka_planki",
+      "quantity": 80,
+      "price_per_unit": 50.0,
+      "total": 4000.0,
+      "work_date": "2026-02-22",
+      "created_at": "2026-02-22T15:36:29.185998"
+    },
+    {
+      "id": 13,
+      "worker_id": 5469235340,
+      "work_code": "shlifovka_karnizi",
+      "quantity": 60,
+      "price_per_unit": 75.0,
+      "total": 4500.0,
+      "work_date": "2026-02-22",
+      "created_at": "2026-02-22T15:36:44.716670"
+    },
+    {
+      "id": 14,
+      "worker_id": 1257501628,
+      "work_code": "lsdp",
+      "quantity": 21,
+      "price_per_unit": 200.0,
+      "total": 4200.0,
+      "work_date": "2026-02-22",
+      "created_at": "2026-02-22T18:59:54.368063"
+    },
+    {
+      "id": 15,
+      "worker_id": 1257501628,
+      "work_code": "ldsp_rez",
+      "quantity": 1,
+      "price_per_unit": 200.0,
+      "total": 200.0,
+      "work_date": "2026-02-22",
+      "created_at": "2026-02-22T19:00:12.538466"
+    },
+    {
+      "id": 16,
+      "worker_id": 1257501628,
+      "work_code": "mdf",
+      "quantity": 1,
+      "price_per_unit": 300.0,
+      "total": 300.0,
+      "work_date": "2026-02-22",
+      "created_at": "2026-02-22T19:00:22.159966"
+    },
+    {
+      "id": 17,
+      "worker_id": 1257501628,
+      "work_code": "lsdp",
+      "quantity": 25,
+      "price_per_unit": 200.0,
+      "total": 5000.0,
+      "work_date": "2026-02-21",
+      "created_at": "2026-02-22T19:00:43.515155"
+    },
+    {
+      "id": 18,
+      "worker_id": 1257501628,
+      "work_code": "mdf",
+      "quantity": 2,
+      "price_per_unit": 300.0,
+      "total": 600.0,
+      "work_date": "2026-02-21",
+      "created_at": "2026-02-22T19:01:02.055501"
+    },
+    {
+      "id": 19,
+      "worker_id": 1257501628,
+      "work_code": "ldsp_rez",
+      "quantity": 2,
+      "price_per_unit": 200.0,
+      "total": 400.0,
+      "work_date": "2026-02-21",
+      "created_at": "2026-02-22T19:01:13.697171"
+    },
+    {
+      "id": 20,
+      "worker_id": 1257501628,
+      "work_code": "lsdp",
+      "quantity": 11,
+      "price_per_unit": 200.0,
+      "total": 2200.0,
+      "work_date": "2026-02-19",
+      "created_at": "2026-02-22T20:06:17.098332"
+    },
+    {
+      "id": 21,
+      "worker_id": 1257501628,
+      "work_code": "mdf",
+      "quantity": 7,
+      "price_per_unit": 300.0,
+      "total": 2100.0,
+      "work_date": "2026-02-19",
+      "created_at": "2026-02-22T20:06:49.736053"
+    },
+    {
+      "id": 22,
+      "worker_id": 1257501628,
+      "work_code": "lsdp",
+      "quantity": 24,
+      "price_per_unit": 200.0,
+      "total": 4800.0,
+      "work_date": "2026-02-18",
+      "created_at": "2026-02-22T20:07:49.143609"
+    },
+    {
+      "id": 23,
+      "worker_id": 1257501628,
+      "work_code": "ldsp_rez",
+      "quantity": 3,
+      "price_per_unit": 200.0,
+      "total": 600.0,
+      "work_date": "2026-02-18",
+      "created_at": "2026-02-22T20:08:17.255419"
+    },
+    {
+      "id": 24,
+      "worker_id": 1257501628,
+      "work_code": "lsdp",
+      "quantity": 32,
+      "price_per_unit": 200.0,
+      "total": 6400.0,
+      "work_date": "2026-02-17",
+      "created_at": "2026-02-22T20:08:42.914312"
+    },
+    {
+      "id": 25,
+      "worker_id": 1257501628,
+      "work_code": "mdf",
+      "quantity": 14,
+      "price_per_unit": 300.0,
+      "total": 4200.0,
+      "work_date": "2026-02-16",
+      "created_at": "2026-02-22T20:09:21.760166"
+    },
+    {
+      "id": 26,
+      "worker_id": 1257501628,
+      "work_code": "lsdp",
+      "quantity": 7,
+      "price_per_unit": 200.0,
+      "total": 1400.0,
+      "work_date": "2026-02-16",
+      "created_at": "2026-02-22T20:09:43.528354"
+    },
+    {
+      "id": 27,
+      "worker_id": 1257501628,
+      "work_code": "ldsp_rez",
+      "quantity": 1,
+      "price_per_unit": 200.0,
+      "total": 200.0,
+      "work_date": "2026-02-16",
+      "created_at": "2026-02-22T20:10:55.984833"
+    },
+    {
+      "id": 28,
+      "worker_id": 1257501628,
+      "work_code": "lsdp",
+      "quantity": 31,
+      "price_per_unit": 200.0,
+      "total": 6200.0,
+      "work_date": "2026-02-15",
+      "created_at": "2026-02-22T20:11:55.039757"
+    },
+    {
+      "id": 29,
+      "worker_id": 1257501628,
+      "work_code": "ldsp_rez",
+      "quantity": 1,
+      "price_per_unit": 200.0,
+      "total": 200.0,
+      "work_date": "2026-02-15",
+      "created_at": "2026-02-22T20:12:34.515230"
+    },
+    {
+      "id": 30,
+      "worker_id": 1257501628,
+      "work_code": "mdf",
+      "quantity": 1,
+      "price_per_unit": 300.0,
+      "total": 300.0,
+      "work_date": "2026-02-15",
+      "created_at": "2026-02-22T20:12:51.826817"
+    },
+    {
+      "id": 31,
+      "worker_id": 1257501628,
+      "work_code": "mdf",
+      "quantity": 15,
+      "price_per_unit": 300.0,
+      "total": 4500.0,
+      "work_date": "2026-02-14",
+      "created_at": "2026-02-22T20:13:19.811607"
+    },
+    {
+      "id": 32,
+      "worker_id": 1257501628,
+      "work_code": "lsdp",
+      "quantity": 8,
+      "price_per_unit": 200.0,
+      "total": 1600.0,
+      "work_date": "2026-02-14",
+      "created_at": "2026-02-22T20:14:17.769227"
+    },
+    {
+      "id": 33,
+      "worker_id": 1257501628,
+      "work_code": "ldsp_rez",
+      "quantity": 1,
+      "price_per_unit": 200.0,
+      "total": 200.0,
+      "work_date": "2026-02-14",
+      "created_at": "2026-02-22T20:14:47.057279"
+    },
+    {
+      "id": 34,
+      "worker_id": 1257501628,
+      "work_code": "mdf",
+      "quantity": 10,
+      "price_per_unit": 300.0,
+      "total": 3000.0,
+      "work_date": "2026-02-12",
+      "created_at": "2026-02-22T20:15:22.926842"
+    },
+    {
+      "id": 35,
+      "worker_id": 1257501628,
+      "work_code": "lsdp",
+      "quantity": 15,
+      "price_per_unit": 200.0,
+      "total": 3000.0,
+      "work_date": "2026-02-12",
+      "created_at": "2026-02-22T20:15:48.982813"
+    },
+    {
+      "id": 36,
+      "worker_id": 1257501628,
+      "work_code": "ldsp_rez",
+      "quantity": 2,
+      "price_per_unit": 200.0,
+      "total": 400.0,
+      "work_date": "2026-02-12",
+      "created_at": "2026-02-22T20:16:06.665761"
+    },
+    {
+      "id": 37,
+      "worker_id": 1257501628,
+      "work_code": "lsdp",
+      "quantity": 31,
+      "price_per_unit": 200.0,
+      "total": 6200.0,
+      "work_date": "2026-02-11",
+      "created_at": "2026-02-22T20:16:29.349623"
+    },
+    {
+      "id": 38,
+      "worker_id": 1257501628,
+      "work_code": "mdf",
+      "quantity": 1,
+      "price_per_unit": 300.0,
+      "total": 300.0,
+      "work_date": "2026-02-11",
+      "created_at": "2026-02-22T20:16:50.322330"
+    },
+    {
+      "id": 39,
+      "worker_id": 1257501628,
+      "work_code": "ldsp_rez",
+      "quantity": 2,
+      "price_per_unit": 200.0,
+      "total": 400.0,
+      "work_date": "2026-02-11",
+      "created_at": "2026-02-22T20:17:06.010691"
+    },
+    {
+      "id": 40,
+      "worker_id": 1257501628,
+      "work_code": "lsdp",
+      "quantity": 25,
+      "price_per_unit": 200.0,
+      "total": 5000.0,
+      "work_date": "2026-02-10",
+      "created_at": "2026-02-22T20:17:34.097234"
+    },
+    {
+      "id": 41,
+      "worker_id": 1257501628,
+      "work_code": "mdf",
+      "quantity": 5,
+      "price_per_unit": 300.0,
+      "total": 1500.0,
+      "work_date": "2026-02-10",
+      "created_at": "2026-02-22T20:17:54.451449"
+    },
+    {
+      "id": 42,
+      "worker_id": 1257501628,
+      "work_code": "ldsp_rez",
+      "quantity": 2,
+      "price_per_unit": 200.0,
+      "total": 400.0,
+      "work_date": "2026-02-10",
+      "created_at": "2026-02-22T20:18:15.736523"
+    },
+    {
+      "id": 43,
+      "worker_id": 1257501628,
+      "work_code": "lsdp",
+      "quantity": 21,
+      "price_per_unit": 200.0,
+      "total": 4200.0,
+      "work_date": "2026-02-09",
+      "created_at": "2026-02-22T20:18:44.278086"
+    },
+    {
+      "id": 44,
+      "worker_id": 1257501628,
+      "work_code": "mdf",
+      "quantity": 3,
+      "price_per_unit": 300.0,
+      "total": 900.0,
+      "work_date": "2026-02-09",
+      "created_at": "2026-02-22T20:19:03.466353"
+    },
+    {
+      "id": 45,
+      "worker_id": 1257501628,
+      "work_code": "ldsp_rez",
+      "quantity": 1,
+      "price_per_unit": 200.0,
+      "total": 200.0,
+      "work_date": "2026-02-09",
+      "created_at": "2026-02-22T20:19:25.604186"
+    },
+    {
+      "id": 46,
+      "worker_id": 1257501628,
+      "work_code": "lsdp",
+      "quantity": 35,
+      "price_per_unit": 200.0,
+      "total": 7000.0,
+      "work_date": "2026-02-08",
+      "created_at": "2026-02-22T20:20:16.940788"
+    },
+    {
+      "id": 47,
+      "worker_id": 1257501628,
+      "work_code": "ldsp_rez",
+      "quantity": 2,
+      "price_per_unit": 200.0,
+      "total": 400.0,
+      "work_date": "2026-02-08",
+      "created_at": "2026-02-22T20:20:52.617502"
+    },
+    {
+      "id": 48,
+      "worker_id": 1257501628,
+      "work_code": "lsdp",
+      "quantity": 26,
+      "price_per_unit": 200.0,
+      "total": 5200.0,
+      "work_date": "2026-02-07",
+      "created_at": "2026-02-22T20:21:16.836758"
+    },
+    {
+      "id": 49,
+      "worker_id": 1257501628,
+      "work_code": "mdf",
+      "quantity": 3,
+      "price_per_unit": 300.0,
+      "total": 900.0,
+      "work_date": "2026-02-07",
+      "created_at": "2026-02-22T20:21:37.306700"
+    },
+    {
+      "id": 50,
+      "worker_id": 1257501628,
+      "work_code": "ldsp_rez",
+      "quantity": 1,
+      "price_per_unit": 200.0,
+      "total": 200.0,
+      "work_date": "2026-02-07",
+      "created_at": "2026-02-22T20:21:53.206790"
+    },
+    {
+      "id": 51,
+      "worker_id": 1257501628,
+      "work_code": "lsdp",
+      "quantity": 18,
+      "price_per_unit": 200.0,
+      "total": 3600.0,
+      "work_date": "2026-02-05",
+      "created_at": "2026-02-22T20:22:22.313095"
+    },
+    {
+      "id": 52,
+      "worker_id": 1257501628,
+      "work_code": "mdf",
+      "quantity": 6,
+      "price_per_unit": 300.0,
+      "total": 1800.0,
+      "work_date": "2026-02-05",
+      "created_at": "2026-02-22T20:22:58.401947"
+    },
+    {
+      "id": 53,
+      "worker_id": 1257501628,
+      "work_code": "ldsp_rez",
+      "quantity": 1,
+      "price_per_unit": 200.0,
+      "total": 200.0,
+      "work_date": "2026-02-05",
+      "created_at": "2026-02-22T20:23:32.674021"
+    },
+    {
+      "id": 54,
+      "worker_id": 1257501628,
+      "work_code": "lsdp",
+      "quantity": 29,
+      "price_per_unit": 200.0,
+      "total": 5800.0,
+      "work_date": "2026-02-04",
+      "created_at": "2026-02-22T20:24:11.356382"
+    },
+    {
+      "id": 55,
+      "worker_id": 1257501628,
+      "work_code": "ldsp_rez",
+      "quantity": 1,
+      "price_per_unit": 200.0,
+      "total": 200.0,
+      "work_date": "2026-02-04",
+      "created_at": "2026-02-22T20:25:37.215325"
+    },
+    {
+      "id": 56,
+      "worker_id": 1257501628,
+      "work_code": "lsdp",
+      "quantity": 34,
+      "price_per_unit": 200.0,
+      "total": 6800.0,
+      "work_date": "2026-02-03",
+      "created_at": "2026-02-22T20:26:03.606780"
+    },
+    {
+      "id": 57,
+      "worker_id": 1257501628,
+      "work_code": "ldsp_rez",
+      "quantity": 1,
+      "price_per_unit": 200.0,
+      "total": 200.0,
+      "work_date": "2026-02-03",
+      "created_at": "2026-02-22T20:26:32.278689"
+    },
+    {
+      "id": 58,
+      "worker_id": 1257501628,
+      "work_code": "lsdp",
+      "quantity": 29,
+      "price_per_unit": 200.0,
+      "total": 5800.0,
+      "work_date": "2026-02-02",
+      "created_at": "2026-02-22T20:27:04.356975"
+    },
+    {
+      "id": 59,
+      "worker_id": 1257501628,
+      "work_code": "ldsp_rez",
+      "quantity": 3,
+      "price_per_unit": 200.0,
+      "total": 600.0,
+      "work_date": "2026-02-02",
+      "created_at": "2026-02-22T20:27:21.168883"
+    },
+    {
+      "id": 60,
+      "worker_id": 1257501628,
+      "work_code": "lsdp",
+      "quantity": 27,
+      "price_per_unit": 200.0,
+      "total": 5400.0,
+      "work_date": "2026-02-01",
+      "created_at": "2026-02-22T20:27:42.742049"
+    },
+    {
+      "id": 61,
+      "worker_id": 1257501628,
+      "work_code": "dirki_20",
+      "quantity": 236,
+      "price_per_unit": 20.0,
+      "total": 4720.0,
+      "work_date": "2026-02-22",
+      "created_at": "2026-02-22T20:31:21.398539"
+    },
+    {
+      "id": 62,
+      "worker_id": 1257501628,
+      "work_code": "dirki_25",
+      "quantity": 40,
+      "price_per_unit": 25.0,
+      "total": 1000.0,
+      "work_date": "2026-02-22",
+      "created_at": "2026-02-22T20:32:03.236005"
+    },
+    {
+      "id": 63,
+      "worker_id": 1257501628,
+      "work_code": "dirki_20",
+      "quantity": 75,
+      "price_per_unit": 20.0,
+      "total": 1500.0,
+      "work_date": "2026-02-22",
+      "created_at": "2026-02-22T20:33:20.934977"
+    },
+    {
+      "id": 64,
+      "worker_id": 1257501628,
+      "work_code": "u_krovat",
+      "quantity": 81,
+      "price_per_unit": 20.0,
+      "total": 1620.0,
+      "work_date": "2026-02-22",
+      "created_at": "2026-02-22T20:39:46.748446"
+    },
+    {
+      "id": 65,
+      "worker_id": 6199592085,
+      "work_code": "u_dior",
+      "quantity": 43,
+      "price_per_unit": 250.0,
+      "total": 10750.0,
+      "work_date": "2026-02-23",
+      "created_at": "2026-02-23T07:37:10.559403"
+    },
+    {
+      "id": 66,
+      "worker_id": 6199592085,
+      "work_code": "aisha_4",
+      "quantity": 39,
+      "price_per_unit": 350.0,
+      "total": 13650.0,
+      "work_date": "2026-02-23",
+      "created_at": "2026-02-23T09:31:16.724695"
+    },
+    {
+      "id": 67,
+      "worker_id": 6199592085,
+      "work_code": "aisha_6",
+      "quantity": 39,
+      "price_per_unit": 450.0,
+      "total": 17550.0,
+      "work_date": "2026-02-23",
+      "created_at": "2026-02-23T09:39:24.193674"
+    },
+    {
+      "id": 68,
+      "worker_id": 6199592085,
+      "work_code": "premium",
+      "quantity": 34,
+      "price_per_unit": 200.0,
+      "total": 6800.0,
+      "work_date": "2026-02-23",
+      "created_at": "2026-02-23T09:39:49.579082"
+    },
+    {
+      "id": 69,
+      "worker_id": 6199592085,
+      "work_code": "antresol_6",
+      "quantity": 29,
+      "price_per_unit": 150.0,
+      "total": 4350.0,
+      "work_date": "2026-02-23",
+      "created_at": "2026-02-23T09:40:45.030787"
+    },
+    {
+      "id": 70,
+      "worker_id": 5469235340,
+      "work_code": "dveri_bol",
+      "quantity": 12,
+      "price_per_unit": 100.0,
+      "total": 1200.0,
+      "work_date": "2026-02-23",
+      "created_at": "2026-02-23T09:44:41.688928"
+    },
+    {
+      "id": 71,
+      "worker_id": 5469235340,
+      "work_code": "dveri_m",
+      "quantity": 17,
+      "price_per_unit": 50.0,
+      "total": 850.0,
+      "work_date": "2026-02-23",
+      "created_at": "2026-02-23T09:45:01.217034"
+    },
+    {
+      "id": 72,
+      "worker_id": 5469235340,
+      "work_code": "rezk_upakovka_karnizov",
+      "quantity": 1,
+      "price_per_unit": 50.0,
+      "total": 50.0,
+      "work_date": "2026-02-23",
+      "created_at": "2026-02-23T09:45:23.069143"
+    }
+  ],
+  "advances": [],
+  "penalties": [],
+  "reminder_settings": [
+    {
+      "id": 1,
+      "evening_hour": 15,
+      "evening_minute": 30,
+      "late_hour": 20,
+      "late_minute": 0,
+      "report_hour": 21,
+      "report_minute": 0,
+      "evening_enabled": true,
+      "late_enabled": false,
+      "report_enabled": true
+    }
+  ]
+}
