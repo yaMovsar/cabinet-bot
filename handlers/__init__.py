@@ -1,23 +1,21 @@
-from .states import (
-    WorkEntry, ViewEntries, WorkerDeleteEntry,
-    AdminAddCategory, AdminAddWork, AdminAddWorker,
-    AdminAssignCategory, AdminRemoveCategory,
-    AdminEditPrice, AdminRenameWorker, AdminManageEntries,
-    AdminDeleteCategory, AdminDeleteWork, AdminDeleteWorker,
-    AdminAdvance, AdminDeleteAdvance,
-    AdminPenalty, AdminDeletePenalty,
-    ReportWorker, AdminReminderSettings,
-    AdminEditCategory, AdminEditWork
-)
+from aiogram import Router
 
-__all__ = [
-    'WorkEntry', 'ViewEntries', 'WorkerDeleteEntry',
-    'AdminAddCategory', 'AdminAddWork', 'AdminAddWorker',
-    'AdminAssignCategory', 'AdminRemoveCategory',
-    'AdminEditPrice', 'AdminRenameWorker', 'AdminManageEntries',
-    'AdminDeleteCategory', 'AdminDeleteWork', 'AdminDeleteWorker',
-    'AdminAdvance', 'AdminDeleteAdvance',
-    'AdminPenalty', 'AdminDeletePenalty',
-    'ReportWorker', 'AdminReminderSettings',
-    'AdminEditCategory', 'AdminEditWork'
-]
+from .common import router as common_router
+from .worker import router as worker_router
+from .admin import router as admin_router
+from .money import router as money_router
+from .report_handlers import router as reports_router
+from .reminders import router as reminders_router
+
+
+def setup_routers() -> Router:
+    main_router = Router()
+    
+    main_router.include_router(common_router)
+    main_router.include_router(worker_router)
+    main_router.include_router(admin_router)
+    main_router.include_router(money_router)
+    main_router.include_router(reports_router)
+    main_router.include_router(reminders_router)
+    
+    return main_router
