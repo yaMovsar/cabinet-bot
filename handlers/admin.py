@@ -83,7 +83,7 @@ async def show_cats(message: types.Message, state: FSMContext):
         w_str = ", ".join([w[1] for w in workers]) if workers else "—"
         all_items = await get_price_list()
         items = [i for i in all_items if i[3] == code]
-        i_str = ", ".join([f"{i[1]}({int(i[2])} руб)" for i in items]) if items else "—"
+        i_str = ", ".join([f"{i[1]}({int(i[2])} руб/{i[6] if len(i)>6 else 'шт'})" for i in items]) if items else "—"
         text += f"{emoji} {name} ({code})\n👥 {w_str}\n📋 {i_str}\n\n"
     await send_long_message(message, text)
 
@@ -264,11 +264,12 @@ async def show_pricelist(message: types.Message, state: FSMContext):
         return
     text = "📄 Прайс-лист:\n\n"
     cur = ""
-    for code, name, price, cat_code, cat_name, cat_emoji in items:
+    for code, name, price, cat_code, cat_name, cat_emoji, unit in items:
         if cat_code != cur:
             cur = cat_code
             text += f"\n{cat_emoji} {cat_name}:\n"
-        text += f"   ▫️ {code} — {name}: {int(price)} руб\n"
+        unit = unit or "шт"
+        text += f"   ▫️ {code} — {name}: {int(price)} руб/{unit}\n"
     await send_long_message(message, text)
 
 
@@ -367,8 +368,8 @@ async def edit_price_start(message: types.Message, state: FSMContext):
     if not items:
         await message.answer("⚠️ Пусто.")
         return
-    buttons = [[InlineKeyboardButton(text=f"{ce} {n} — {int(p)} руб",
-                callback_data=f"ep:{c}")] for c, n, p, cc, cn, ce in items]
+    buttons = [[InlineKeyboardButton(text=f"{ce} {n} — {int(p)} руб/{unit if len(item)>6 else 'шт'}",
+            callback_data=f"ep:{c}")] for c, n, p, cc, cn, ce, unit in items]
     await message.answer("Позиция:", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
     await state.set_state(AdminEditPrice.choosing_item)
 
@@ -461,7 +462,7 @@ async def del_work_start(message: types.Message, state: FSMContext):
 async def del_work_chosen(callback: types.CallbackQuery, state: FSMContext):
     code = callback.data.split(":")[1]
     items = await get_price_list()
-    info = next(((c, n, p) for c, n, p, cc, cn, ce in items if c == code), None)
+    info = next(((c, n, p) for c, n, p, cc, cn, ce, unit in items if c == code), None)
     if not info:
         await callback.answer("Не найдена", show_alert=True)
         await state.clear()
