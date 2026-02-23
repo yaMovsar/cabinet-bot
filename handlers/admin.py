@@ -262,14 +262,20 @@ async def show_pricelist(message: types.Message, state: FSMContext):
     if not items:
         await message.answer("📄 Пусто.")
         return
+    
     text = "📄 Прайс-лист:\n\n"
     cur = ""
     for row in items:
-        code, name, price, cat_code, cat_name, cat_emoji, unit = (row + ["шт"])[:7]
+        r = list(row)
+        if len(r) == 6:
+            r.append("шт")
+        code, name, price, cat_code, cat_name, cat_emoji, unit = r
+        
         if cat_code != cur:
             cur = cat_code
             text += f"\n{cat_emoji} {cat_name}:\n"
         text += f"   ▫️ {code} — {name}: {int(price)} руб/{unit}\n"
+    
     await send_long_message(message, text)
 
 
