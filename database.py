@@ -819,3 +819,47 @@ async def update_reminder_settings(**kwargs):
         vals.append(1)
         await conn.execute(
             f"UPDATE reminder_settings SET {sets} WHERE id = ${len(vals)}", *vals)
+
+async def update_category(code: str, new_name: str = None, new_emoji: str = None):
+    async with pool.acquire() as conn:
+        if new_name and new_emoji:
+            await conn.execute(
+                "UPDATE categories SET name = $1, emoji = $2 WHERE code = $3",
+                new_name, new_emoji, code)
+        elif new_name:
+            await conn.execute(
+                "UPDATE categories SET name = $1 WHERE code = $2",
+                new_name, code)
+        elif new_emoji:
+            await conn.execute(
+                "UPDATE categories SET emoji = $1 WHERE code = $2",
+                new_emoji, code)
+
+
+async def update_work_item(code: str, new_name: str = None, new_price: float = None, 
+                          new_price_type: str = None):
+    async with pool.acquire() as conn:
+        if new_name:
+            await conn.execute(
+                "UPDATE price_list SET name = $1 WHERE code = $2",
+                new_name, code)
+        if new_price is not None:
+            await conn.execute(
+                "UPDATE price_list SET price = $1 WHERE code = $2",
+                new_price, code)
+        if new_price_type:
+            await conn.execute(
+                "UPDATE price_list SET price_type = $1 WHERE code = $2",
+                new_price_type, code)
+
+
+async def get_work_by_code(code: str):
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow("""
+            SELECT pl.code, pl.name, pl.price, pl.price_type, 
+                   pl.category_code, c.name, c.emoji
+            FROM price_list pl
+            JOIN categories c ON pl.category_code = c.code
+            WHERE pl.code = $1
+        """, code)
+        return tuple(row) if row else None

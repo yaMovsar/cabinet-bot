@@ -59,16 +59,15 @@ def get_add_keyboard():
 
 
 def get_edit_keyboard():
-    buttons = [
-        [KeyboardButton(text="🔗 Назначить кат."),
-         KeyboardButton(text="🔓 Убрать кат.")],
-        [KeyboardButton(text="✏️ Расценка"),
-         KeyboardButton(text="✏️ Переименовать")],
-        [KeyboardButton(text="🔧 Записи работников")],
-        [KeyboardButton(text="🔙 В админ-панель")],
-    ]
-    return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
-
+    return ReplyKeyboardMarkup(keyboard=[
+        [KeyboardButton(text="✏️ Редактировать категорию")],  # ← НОВОЕ
+        [KeyboardButton(text="✏️ Редактировать работу")],     # ← НОВОЕ
+        [KeyboardButton(text="✏️ Расценка")],
+        [KeyboardButton(text="✏️ Переименовать")],
+        [KeyboardButton(text="🔗 Назначить кат.")],
+        [KeyboardButton(text="🔓 Убрать кат.")],
+        [KeyboardButton(text="🏠 Главное меню")]
+    ], resize_keyboard=True)
 
 def get_delete_keyboard():
     buttons = [

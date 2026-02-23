@@ -72,6 +72,20 @@ class AdminManageEntries(StatesGroup):
     entering_new_quantity = State()
     confirming_delete = State()
 
+class AdminEditCategory(StatesGroup):
+    choosing_category = State()
+    choosing_action = State()
+    entering_new_name = State()
+    entering_new_emoji = State()
+
+
+class AdminEditWork(StatesGroup):
+    choosing_category = State()
+    choosing_work = State()
+    choosing_action = State()
+    entering_new_name = State()
+    choosing_new_price_type = State()
+    entering_new_price = State()
 
 # ==================== АДМИН: УДАЛЕНИЕ ====================
 
