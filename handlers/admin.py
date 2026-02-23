@@ -1,3 +1,4 @@
+
 import logging
 from aiogram import Router, types, F, Bot
 from aiogram.fsm.context import FSMContext
@@ -14,7 +15,9 @@ from database import (
     delete_entry_by_id, update_entry_quantity,
     rename_category, update_category_emoji,
     rename_price_item, change_price_item_category, get_price_item_by_code
+    update_price_item_unit  
 )
+
 from states import (
     AdminAddCategory, AdminAddWork, AdminAddWorker,
     AdminAssignCategory, AdminRemoveCategory,
@@ -30,6 +33,8 @@ from handlers.filters import AdminFilter, StaffFilter
 
 router = Router()
 
+# Доступные единицы измерения
+UNITS = ["шт", "кв.м", "п.м", "л", "кг", "час"]
 
 # ==================== КАТЕГОРИИ ====================
 
@@ -128,11 +133,39 @@ async def add_work_price(message: types.Message, state: FSMContext):
     except ValueError:
         await message.answer("❌ Положительное число!")
         return
-    data = await state.get_data()
-    await add_price_item(data["code"], data["name"], price, data["category_code"])
-    await message.answer(f"✅ {data['code']} — {data['name']} — {int(price)} руб", reply_markup=get_add_keyboard())
-    await state.clear()
+    await state.update_data(price=price)
+    
+    # Выбор единицы измерения
+    buttons = []
+    row = []
+    for unit in UNITS:
+        row.append(InlineKeyboardButton(text=unit, callback_data=f"awu:{unit}"))
+        if len(row) == 3:
+            buttons.append(row)
+            row = []
+    if row:
+        buttons.append(row)
+    buttons.append([InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")])
+    
+    await message.answer(
+        f"💰 Цена: {int(price)} руб\n\nВыберите единицу измерения:",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
+    )
+    await state.set_state(AdminAddWork.choosing_unit)
 
+
+@router.callback_query(F.data.startswith("awu:"), AdminAddWork.choosing_unit)
+async def add_work_unit(callback: types.CallbackQuery, state: FSMContext):
+    unit = callback.data.split(":")[1]
+    data = await state.get_data()
+    await add_price_item(data["code"], data["name"], data["price"], data["category_code"], unit)
+    await callback.message.edit_text(
+        f"✅ Работа добавлена!\n\n"
+        f"📝 {data['name']}\n"
+        f"💰 {int(data['price'])} руб/{unit}"
+    )
+    await state.clear()
+    await callback.answer()
 
 # ==================== РАБОТНИК ====================
 
@@ -796,20 +829,25 @@ async def edit_work_chosen(callback: types.CallbackQuery, state: FSMContext):
         await callback.answer("Не найдена", show_alert=True)
         await state.clear()
         return
+    # item = (code, name, price, category_code, cat_name, cat_emoji, unit)
     await state.update_data(
         work_code=item[0], work_name=item[1], work_price=item[2],
-        work_cat_code=item[3], work_cat_name=item[4], work_cat_emoji=item[5]
+        work_cat_code=item[3], work_cat_name=item[4], work_cat_emoji=item[5],
+        work_unit=item[6] if len(item) > 6 else "шт"
     )
     buttons = [
         [InlineKeyboardButton(text="📝 Переименовать", callback_data="ework_act:rename")],
         [InlineKeyboardButton(text="💰 Изменить цену", callback_data="ework_act:price")],
         [InlineKeyboardButton(text="📂 Изменить категорию", callback_data="ework_act:category")],
+        [InlineKeyboardButton(text="📏 Изменить ед.изм.", callback_data="ework_act:unit")],  # Добавлено
         [InlineKeyboardButton(text="🔙 Назад", callback_data="ework_act:back")]
     ]
+    unit = item[6] if len(item) > 6 else "шт"
     await callback.message.edit_text(
         f"📝 Работа: {item[1]}\n"
-        f"💰 Цена: {int(item[2])} руб\n"
+        f"💰 Цена: {int(item[2])} руб/{unit}\n"
         f"📂 Категория: {item[5]} {item[4]}\n"
+        f"📏 Единица: {unit}\n"
         f"📋 Код: {code}\n\n"
         f"Что изменить?",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
@@ -852,11 +890,47 @@ async def edit_work_action(callback: types.CallbackQuery, state: FSMContext):
             reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
         )
         await state.set_state(AdminEditWork.choosing_new_category)
+    elif action == "unit":  # Новая ветка
+        buttons = []
+        row = []
+        for unit in UNITS:
+            row.append(InlineKeyboardButton(text=unit, callback_data=f"ework_unit:{unit}"))
+            if len(row) == 3:
+                buttons.append(row)
+                row = []
+        if row:
+            buttons.append(row)
+        buttons.append([InlineKeyboardButton(text="🔙 Назад", callback_data="ework_unit:back")])
+        await callback.message.edit_text(
+            f"📏 Текущая единица: {data.get('work_unit', 'шт')}\n\n"
+            f"Выберите новую единицу измерения:",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
+        )
+        await state.set_state(AdminEditWork.choosing_new_unit)
     elif action == "back":
         await state.clear()
         await callback.message.edit_text("👌 Ок")
     await callback.answer()
 
+@router.callback_query(F.data.startswith("ework_unit:"), AdminEditWork.choosing_new_unit)
+async def edit_work_new_unit(callback: types.CallbackQuery, state: FSMContext):
+    unit = callback.data.split(":")[1]
+    if unit == "back":
+        await state.clear()
+        await callback.message.edit_text("👌 Ок")
+        await callback.answer()
+        return
+    
+    data = await state.get_data()
+    await update_price_item_unit(data['work_code'], unit)
+    await callback.message.edit_text(
+        f"✅ Единица измерения изменена!\n\n"
+        f"📝 {data['work_name']}\n"
+        f"Было: {data.get('work_unit', 'шт')}\n"
+        f"Стало: {unit}"
+    )
+    await state.clear()
+    await callback.answer()
 
 @router.message(AdminEditWork.entering_new_name)
 async def edit_work_new_name(message: types.Message, state: FSMContext):

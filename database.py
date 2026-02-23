@@ -63,7 +63,7 @@ async def init_db():
                 id SERIAL PRIMARY KEY,
                 worker_id BIGINT NOT NULL REFERENCES workers(telegram_id),
                 work_code TEXT NOT NULL REFERENCES price_list(code),
-                quantity INTEGER NOT NULL,
+                quantity REAL NOT NULL,
                 price_per_unit REAL NOT NULL,
                 total REAL NOT NULL,
                 work_date DATE NOT NULL,
@@ -114,11 +114,20 @@ async def init_db():
                 VALUES (1, 18, 0, 20, 0, 21, 0, TRUE, TRUE, TRUE)
             """)
         
+        # Индексы
         await conn.execute("CREATE INDEX IF NOT EXISTS idx_worklog_worker_date ON work_log(worker_id, work_date)")
         await conn.execute("CREATE INDEX IF NOT EXISTS idx_worklog_date ON work_log(work_date)")
         await conn.execute("CREATE INDEX IF NOT EXISTS idx_advances_worker_date ON advances(worker_id, advance_date)")
         await conn.execute("CREATE INDEX IF NOT EXISTS idx_penalties_worker_date ON penalties(worker_id, penalty_date)")
         await conn.execute("CREATE INDEX IF NOT EXISTS idx_worker_categories ON worker_categories(worker_id, category_code)")
+
+        # Миграция: добавляем поле unit в price_list
+        try:
+            await conn.execute("""
+                ALTER TABLE price_list ADD COLUMN IF NOT EXISTS unit TEXT DEFAULT 'шт'
+            """)
+        except Exception:
+            pass
 
 
 async def close_db():
@@ -149,6 +158,18 @@ async def delete_category(code: str):
         await conn.execute("DELETE FROM worker_categories WHERE category_code = $1", code)
         await conn.execute("UPDATE price_list SET is_active = FALSE WHERE category_code = $1", code)
         await conn.execute("DELETE FROM categories WHERE code = $1", code)
+
+
+async def rename_category(code: str, new_name: str):
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE categories SET name = $1 WHERE code = $2", new_name, code)
+
+
+async def update_category_emoji(code: str, new_emoji: str):
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE categories SET emoji = $1 WHERE code = $2", new_emoji, code)
 
 
 # ==================== РАБОТНИКИ ====================
@@ -229,19 +250,20 @@ async def get_workers_in_category(category_code: str):
 
 # ==================== ПРАЙС-ЛИСТ ====================
 
-async def add_price_item(code: str, name: str, price: float, category_code: str):
+async def add_price_item(code: str, name: str, price: float, category_code: str, unit: str = "шт"):
     async with pool.acquire() as conn:
         await conn.execute("""
-            INSERT INTO price_list (code, name, price, category_code, is_active)
-            VALUES ($1, $2, $3, $4, TRUE)
-            ON CONFLICT (code) DO UPDATE SET name = $2, price = $3, category_code = $4, is_active = TRUE
-        """, code, name, price, category_code)
+            INSERT INTO price_list (code, name, price, category_code, is_active, unit)
+            VALUES ($1, $2, $3, $4, TRUE, $5)
+            ON CONFLICT (code) DO UPDATE SET name = $2, price = $3, category_code = $4, is_active = TRUE, unit = $5
+        """, code, name, price, category_code, unit)
 
 
 async def get_price_list():
     async with pool.acquire() as conn:
         rows = await conn.fetch("""
-            SELECT pl.code, pl.name, pl.price, pl.category_code, c.name, c.emoji
+            SELECT pl.code, pl.name, pl.price, pl.category_code, c.name, c.emoji,
+                   COALESCE(pl.unit, 'шт') as unit
             FROM price_list pl
             JOIN categories c ON pl.category_code = c.code
             WHERE pl.is_active = TRUE
@@ -253,7 +275,8 @@ async def get_price_list():
 async def get_price_list_for_worker(worker_id: int):
     async with pool.acquire() as conn:
         rows = await conn.fetch("""
-            SELECT pl.code, pl.name, pl.price, pl.category_code
+            SELECT pl.code, pl.name, pl.price, pl.category_code,
+                   COALESCE(pl.unit, 'шт') as unit
             FROM price_list pl
             JOIN worker_categories wc ON pl.category_code = wc.category_code
             WHERE wc.worker_id = $1 AND pl.is_active = TRUE
@@ -279,9 +302,40 @@ async def delete_price_item_permanently(code: str) -> bool:
             return True
 
 
+async def rename_price_item(code: str, new_name: str):
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE price_list SET name = $1 WHERE code = $2", new_name, code)
+
+
+async def change_price_item_category(code: str, new_category_code: str):
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE price_list SET category_code = $1 WHERE code = $2",
+            new_category_code, code)
+
+
+async def get_price_item_by_code(code: str):
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow("""
+            SELECT pl.code, pl.name, pl.price, pl.category_code, c.name, c.emoji,
+                   COALESCE(pl.unit, 'шт') as unit
+            FROM price_list pl
+            JOIN categories c ON pl.category_code = c.code
+            WHERE pl.code = $1
+        """, code)
+        return tuple(row) if row else None
+
+
+async def update_price_item_unit(code: str, unit: str):
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE price_list SET unit = $1 WHERE code = $2", unit, code)
+
+
 # ==================== ЗАПИСИ О РАБОТЕ ====================
 
-async def add_work(worker_id: int, work_code: str, quantity: int, price: float, work_date=None) -> float:
+async def add_work(worker_id: int, work_code: str, quantity: float, price: float, work_date=None) -> float:
     work_date = parse_date(work_date)
     total = quantity * price
     async with pool.acquire() as conn:
@@ -451,7 +505,7 @@ async def delete_entry_by_id(entry_id: int):
         return None
 
 
-async def update_entry_quantity(entry_id: int, new_quantity: int) -> bool:
+async def update_entry_quantity(entry_id: int, new_quantity: float) -> bool:
     async with pool.acquire() as conn:
         entry = await conn.fetchrow(
             "SELECT price_per_unit FROM work_log WHERE id = $1", entry_id)
@@ -774,43 +828,6 @@ async def delete_penalty(penalty_id: int):
             return tuple(penalty)
         return None
 
-
-# ==================== РЕДАКТИРОВАНИЕ КАТЕГОРИЙ/РАБОТ ====================
-
-async def rename_category(code: str, new_name: str):
-    async with pool.acquire() as conn:
-        await conn.execute(
-            "UPDATE categories SET name = $1 WHERE code = $2", new_name, code)
-
-
-async def update_category_emoji(code: str, new_emoji: str):
-    async with pool.acquire() as conn:
-        await conn.execute(
-            "UPDATE categories SET emoji = $1 WHERE code = $2", new_emoji, code)
-
-
-async def rename_price_item(code: str, new_name: str):
-    async with pool.acquire() as conn:
-        await conn.execute(
-            "UPDATE price_list SET name = $1 WHERE code = $2", new_name, code)
-
-
-async def change_price_item_category(code: str, new_category_code: str):
-    async with pool.acquire() as conn:
-        await conn.execute(
-            "UPDATE price_list SET category_code = $1 WHERE code = $2",
-            new_category_code, code)
-
-
-async def get_price_item_by_code(code: str):
-    async with pool.acquire() as conn:
-        row = await conn.fetchrow("""
-            SELECT pl.code, pl.name, pl.price, pl.category_code, c.name, c.emoji
-            FROM price_list pl
-            JOIN categories c ON pl.category_code = c.code
-            WHERE pl.code = $1
-        """, code)
-        return tuple(row) if row else None
 
 # ==================== НАСТРОЙКИ НАПОМИНАНИЙ ====================
 

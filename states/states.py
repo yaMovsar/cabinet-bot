@@ -29,12 +29,12 @@ class AdminAddCategory(StatesGroup):
     entering_name = State()
     entering_emoji = State()
 
-
-class AdminAddWork(StatesGroup):
-    choosing_category = State()
-    entering_code = State()
-    entering_name = State()
-    entering_price = State()
+class AdminEditWork(StatesGroup):
+    choosing_work = State()
+    choosing_action = State()
+    entering_new_name = State()
+    choosing_new_category = State()
+    choosing_new_unit = State()  # Добавлено
 
 
 class AdminAddWorker(StatesGroup):

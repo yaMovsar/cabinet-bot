@@ -25,9 +25,11 @@ def make_date_picker(callback_prefix: str, cancel_callback: str = "cancel"):
 def make_work_buttons(cat_items, columns=2):
     buttons = []
     row = []
-    for code, name, price, cat in cat_items:
+    for item in cat_items:
+        code, name, price = item[0], item[1], item[2]
+        unit = item[4] if len(item) > 4 else "шт"
         row.append(InlineKeyboardButton(
-            text=f"{name} {int(price)}₽",
+            text=f"{name} {int(price)}₽/{unit}",
             callback_data=f"work:{code}"
         ))
         if len(row) == columns:

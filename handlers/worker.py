@@ -1,4 +1,3 @@
-from states import WorkEntry, ViewEntries, WorkerDeleteEntry, SupportMessage
 from datetime import date, timedelta
 import logging
 
@@ -15,7 +14,7 @@ from database import (
     delete_entry_by_id,
     get_worker_full_stats, get_worker_advances, get_worker_penalties
 )
-from states import WorkEntry, ViewEntries, WorkerDeleteEntry
+from states import WorkEntry, ViewEntries, WorkerDeleteEntry, SupportMessage
 from keyboards import make_date_picker, make_work_buttons
 from utils import format_date, format_date_short, parse_user_date, send_long_message, MONTHS_RU
 from keyboards import get_main_keyboard
@@ -40,6 +39,13 @@ def to_date_str(value) -> str:
 def is_today(date_value) -> bool:
     """Проверяет является ли дата сегодняшней"""
     return to_date_str(date_value) == date.today().isoformat()
+
+
+def fmt_qty(qty) -> str:
+    """Форматирует количество: 10.0 → '10', 2.5 → '2.5'"""
+    if float(qty) == int(qty):
+        return str(int(qty))
+    return f"{float(qty):.2f}".rstrip('0').rstrip('.')
 
 
 # ==================== ЗАПИСАТЬ РАБОТУ ====================
@@ -213,15 +219,19 @@ async def work_back_to_categories(callback: types.CallbackQuery, state: FSMConte
 async def work_chosen(callback: types.CallbackQuery, state: FSMContext):
     code = callback.data.split(":")[1]
     items = await get_price_list_for_worker(callback.from_user.id)
-    info = next(((c, n, p) for c, n, p, cat in items if c == code), None)
+    # items = (code, name, price, cat_code, unit)
+    info = next((i for i in items if i[0] == code), None)
     if not info:
         await callback.answer("Не найдено", show_alert=True)
         return
-    await state.update_data(work_info={"code": info[0], "name": info[1], "price": info[2]})
+    unit = info[4] if len(info) > 4 else "шт"
+    await state.update_data(work_info={
+        "code": info[0], "name": info[1], "price": info[2], "unit": unit
+    })
     data = await state.get_data()
     await callback.message.edit_text(
         f"📅 Дата: {format_date(data['work_date'])}\n"
-        f"{info[1]} ({int(info[2])} руб/шт)\n\nВведите количество:"
+        f"{info[1]} ({int(info[2])} руб/{unit})\n\nВведите количество ({unit}):"
     )
     await state.set_state(WorkEntry.entering_quantity)
     await callback.answer()
@@ -230,16 +240,17 @@ async def work_chosen(callback: types.CallbackQuery, state: FSMContext):
 @router.message(WorkEntry.entering_quantity)
 async def quantity_entered(message: types.Message, state: FSMContext):
     try:
-        qty = int(message.text)
+        qty = float(message.text.replace(',', '.'))
         if qty <= 0:
             raise ValueError
     except ValueError:
-        await message.answer("❌ Введите положительное число!")
+        await message.answer("❌ Введите положительное число!\n\nПримеры: 10 или 2.5 или 12,75")
         return
 
     data = await state.get_data()
     info = data["work_info"]
     total = qty * info["price"]
+    unit = info.get("unit", "шт")
 
     if total > 10000:
         await state.update_data(quantity=qty)
@@ -251,7 +262,7 @@ async def quantity_entered(message: types.Message, state: FSMContext):
         await message.answer(
             f"⚠️ Внимание! Большая сумма!\n\n"
             f"📅 Дата: {format_date(data.get('work_date', date.today().isoformat()))}\n"
-            f"📦 {info['name']} x {qty} = {int(total)} руб\n\nВсё верно?",
+            f"📦 {info['name']} x {fmt_qty(qty)} {unit} = {int(total)} руб\n\nВсё верно?",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
         )
         await state.set_state(WorkEntry.confirming_large)
@@ -284,6 +295,7 @@ async def save_work_entry(message, state, qty, user=None):
     data = await state.get_data()
     info = data["work_info"]
     work_date = to_date_str(data.get("work_date", date.today().isoformat()))
+    unit = info.get("unit", "шт")
 
     total = await add_work(user.id, info["code"], qty, info["price"], work_date)
     daily = await get_daily_total(user.id, work_date)
@@ -297,7 +309,7 @@ async def save_work_entry(message, state, qty, user=None):
     await message.answer(
         f"✅ Записано!\n\n"
         f"📅 Дата: {format_date(work_date)}\n"
-        f"📦 {info['name']} x {qty} = {int(total)} руб\n"
+        f"📦 {info['name']} x {fmt_qty(qty)} {unit} = {int(total)} руб\n"
         f"💰 За этот день: {int(day_total)} руб",
         reply_markup=buttons
     )
@@ -307,14 +319,14 @@ async def save_work_entry(message, state, qty, user=None):
             f"📬 Новая запись!\n\n"
             f"👤 {user.full_name}\n"
             f"📅 {format_date(work_date)}\n"
-            f"📦 {info['name']} x {qty} = {int(total)} руб\n"
+            f"📦 {info['name']} x {fmt_qty(qty)} {unit} = {int(total)} руб\n"
             f"💰 За этот день: {int(day_total)} руб"
         )
         try:
             await bot.send_message(ADMIN_ID, notify_text)
         except Exception as e:
             logging.error(f"Notify admin: {e}")
-      
+
     await state.clear()
 
 
@@ -343,6 +355,106 @@ async def back_to_menu(callback: types.CallbackQuery, state: FSMContext):
         reply_markup=get_main_keyboard(callback.from_user.id)
     )
     await callback.answer()
+
+
+# ==================== ПОДДЕРЖКА ====================
+
+@router.message(F.text == "💬 Поддержка")
+async def support_start(message: types.Message, state: FSMContext):
+    await state.clear()
+    buttons = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="❌ Отмена", callback_data="support_cancel")]
+    ])
+    await message.answer(
+        "💬 Связь с поддержкой\n\n"
+        "Напишите ваше сообщение или вопрос.\n"
+        "Администратор получит его и ответит вам.",
+        reply_markup=buttons
+    )
+    await state.set_state(SupportMessage.entering_message)
+
+
+@router.callback_query(F.data == "support_cancel", SupportMessage.entering_message)
+async def support_cancel(callback: types.CallbackQuery, state: FSMContext):
+    await state.clear()
+    await callback.message.edit_text("❌ Отменено")
+    await callback.answer()
+
+
+@router.message(SupportMessage.entering_message)
+async def support_send(message: types.Message, state: FSMContext):
+    user = message.from_user
+    text = message.text.strip()
+    
+    if len(text) < 3:
+        await message.answer("❌ Сообщение слишком короткое!")
+        return
+    
+    admin_text = (
+        f"💬 Сообщение в поддержку!\n\n"
+        f"👤 От: {user.full_name}\n"
+        f"🆔 ID: {user.id}\n"
+        f"📝 Сообщение:\n{text}"
+    )
+    
+    buttons = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="💬 Ответить", callback_data=f"support_reply:{user.id}")]
+    ])
+    
+    try:
+        await bot.send_message(ADMIN_ID, admin_text, reply_markup=buttons)
+        await message.answer(
+            "✅ Сообщение отправлено!\n\n"
+            "Администратор получит его и ответит вам в ближайшее время.",
+            reply_markup=get_main_keyboard(message.from_user.id)
+        )
+    except Exception as e:
+        logging.error(f"Support message error: {e}")
+        await message.answer("❌ Ошибка отправки. Попробуйте позже.")
+    
+    await state.clear()
+
+
+@router.callback_query(F.data.startswith("support_reply:"))
+async def support_reply_start(callback: types.CallbackQuery, state: FSMContext):
+    if callback.from_user.id != ADMIN_ID:
+        await callback.answer("⛔ Нет доступа", show_alert=True)
+        return
+    
+    user_id = int(callback.data.split(":")[1])
+    await state.update_data(reply_to_user=user_id)
+    await callback.message.answer(
+        f"💬 Введите ответ для пользователя ID {user_id}:"
+    )
+    await state.set_state(SupportMessage.waiting_reply)
+    await callback.answer()
+
+
+@router.message(SupportMessage.waiting_reply)
+async def support_reply_send(message: types.Message, state: FSMContext):
+    if message.from_user.id != ADMIN_ID:
+        await state.clear()
+        return
+    
+    data = await state.get_data()
+    user_id = data.get("reply_to_user")
+    
+    if not user_id:
+        await message.answer("❌ Ошибка: не найден пользователь")
+        await state.clear()
+        return
+    
+    try:
+        await bot.send_message(
+            user_id,
+            f"💬 Ответ от администратора:\n\n{message.text}"
+        )
+        await message.answer("✅ Ответ отправлен!")
+    except Exception as e:
+        logging.error(f"Support reply error: {e}")
+        await message.answer(f"❌ Ошибка: {e}")
+    
+    await state.clear()
 
 
 # ==================== ИМПОРТ ИЗ SQLITE ====================
@@ -406,7 +518,6 @@ async def import_from_sqlite(message: types.Message):
         }
 
         async with pool.acquire() as pg:
-            # Очищаем таблицы
             await pg.execute("DELETE FROM work_log")
             await pg.execute("DELETE FROM advances")
             await pg.execute("DELETE FROM penalties")
@@ -416,12 +527,10 @@ async def import_from_sqlite(message: types.Message):
             await pg.execute("DELETE FROM categories")
             await pg.execute("DELETE FROM reminder_settings")
 
-            # Сбрасываем счётчики
             await pg.execute("ALTER SEQUENCE IF EXISTS work_log_id_seq RESTART WITH 1")
             await pg.execute("ALTER SEQUENCE IF EXISTS advances_id_seq RESTART WITH 1")
             await pg.execute("ALTER SEQUENCE IF EXISTS penalties_id_seq RESTART WITH 1")
 
-            # categories
             cursor = await sqlite.execute("SELECT code, name, emoji FROM categories")
             rows = await cursor.fetchall()
             for row in rows:
@@ -430,7 +539,6 @@ async def import_from_sqlite(message: types.Message):
                     row[0], row[1], row[2])
             stats['categories'] = len(rows)
 
-            # workers
             cursor = await sqlite.execute("SELECT telegram_id, name, registered_at FROM workers")
             rows = await cursor.fetchall()
             for row in rows:
@@ -439,16 +547,14 @@ async def import_from_sqlite(message: types.Message):
                     row[0], row[1], parse_datetime(row[2]))
             stats['workers'] = len(rows)
 
-            # price_list
             cursor = await sqlite.execute("SELECT code, name, price, category_code, is_active FROM price_list")
             rows = await cursor.fetchall()
             for row in rows:
                 await pg.execute(
-                    "INSERT INTO price_list (code, name, price, category_code, is_active) VALUES ($1, $2, $3, $4, $5)",
+                    "INSERT INTO price_list (code, name, price, category_code, is_active, unit) VALUES ($1, $2, $3, $4, $5, 'шт')",
                     row[0], row[1], row[2], row[3], bool(row[4]))
             stats['prices'] = len(rows)
 
-            # worker_categories
             cursor = await sqlite.execute("SELECT worker_id, category_code FROM worker_categories")
             rows = await cursor.fetchall()
             for row in rows:
@@ -457,7 +563,6 @@ async def import_from_sqlite(message: types.Message):
                     row[0], row[1])
             stats['worker_cats'] = len(rows)
 
-            # work_log
             cursor = await sqlite.execute(
                 "SELECT worker_id, work_code, quantity, price_per_unit, total, work_date, created_at FROM work_log ORDER BY id")
             rows = await cursor.fetchall()
@@ -468,7 +573,6 @@ async def import_from_sqlite(message: types.Message):
                     parse_date_local(row[5]), parse_datetime(row[6]))
             stats['work_logs'] = len(rows)
 
-            # advances
             cursor = await sqlite.execute(
                 "SELECT worker_id, amount, comment, advance_date, created_at FROM advances ORDER BY id")
             rows = await cursor.fetchall()
@@ -478,7 +582,6 @@ async def import_from_sqlite(message: types.Message):
                     row[0], row[1], row[2] or '', parse_date_local(row[3]), parse_datetime(row[4]))
             stats['advances'] = len(rows)
 
-            # penalties
             cursor = await sqlite.execute(
                 "SELECT worker_id, amount, reason, penalty_date, created_at FROM penalties ORDER BY id")
             rows = await cursor.fetchall()
@@ -488,7 +591,6 @@ async def import_from_sqlite(message: types.Message):
                     row[0], row[1], row[2] or '', parse_date_local(row[3]), parse_datetime(row[4]))
             stats['penalties'] = len(rows)
 
-            # reminder_settings
             cursor = await sqlite.execute("SELECT * FROM reminder_settings WHERE id = 1")
             settings = await cursor.fetchone()
             if settings:
@@ -618,13 +720,12 @@ async def show_entries_for_date(message, state, user_id, target_date, edit=False
 
     for entry_id, name, cat_name, cat_emoji, qty, price, total, created in entries:
         time_str = created[11:16] if len(created) > 16 else ""
-        text += f"{cat_emoji} {name} x {int(qty)} = {int(total)} руб ({time_str})\n"
+        text += f"{cat_emoji} {name} x {fmt_qty(qty)} = {int(total)} руб ({time_str})\n"
         day_total += total
 
-        # ✅ Исправлено — используем is_today()
         if is_today(target_date):
             buttons.append([InlineKeyboardButton(
-                text=f"❌ {name} x {int(qty)} ({int(total)} руб)",
+                text=f"❌ {name} x {fmt_qty(qty)} ({int(total)} руб)",
                 callback_data=f"mydel:{entry_id}"
             )])
 
@@ -670,7 +771,7 @@ async def my_entry_chosen(callback: types.CallbackQuery, state: FSMContext):
         [InlineKeyboardButton(text="❌ Отмена", callback_data="myconf:no")]
     ]
     await callback.message.edit_text(
-        f"⚠️ Удалить?\n\n📦 {entry[1]} x {int(entry[2])} = {int(entry[4])} руб",
+        f"⚠️ Удалить?\n\n📦 {entry[1]} x {fmt_qty(entry[2])} = {int(entry[4])} руб",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
     )
     await state.set_state(WorkerDeleteEntry.confirming)
@@ -683,7 +784,7 @@ async def my_entry_confirm(callback: types.CallbackQuery, state: FSMContext):
         data = await state.get_data()
         await delete_entry_by_id(data["entry_id"])
         await callback.message.edit_text(
-            f"✅ Удалено: {data['entry_name']} x {int(data['entry_qty'])}")
+            f"✅ Удалено: {data['entry_name']} x {fmt_qty(data['entry_qty'])}")
     else:
         await callback.message.edit_text("❌ Отменено.")
     await state.clear()
@@ -715,7 +816,7 @@ async def show_daily(message: types.Message, state: FSMContext):
     text = f"📊 {today.strftime('%d.%m.%Y')}:\n\n"
     total = 0
     for code, qty, price, sub in rows:
-        text += f"▫️ {names.get(code, code)}: {int(qty)}шт x {int(price)} руб = {int(sub)} руб\n"
+        text += f"▫️ {names.get(code, code)}: {fmt_qty(qty)} x {int(price)} руб = {int(sub)} руб\n"
         total += sub
     text += f"\n💰 Итого за день: {int(total)} руб"
 
@@ -754,7 +855,7 @@ async def show_monthly(message: types.Message, state: FSMContext):
             current_date = work_date
             day_total = 0
             work_days += 1
-        text += f"   ▫️ {name} x {int(qty)} = {int(subtotal)} руб\n"
+        text += f"   ▫️ {name} x {fmt_qty(qty)} = {int(subtotal)} руб\n"
         day_total += subtotal
         grand_total += subtotal
     if current_date != "":
@@ -777,105 +878,6 @@ async def show_monthly(message: types.Message, state: FSMContext):
 
     await send_long_message(message, text)
 
-# ==================== ПОДДЕРЖКА ====================
-
-@router.message(F.text == "💬 Поддержка")
-async def support_start(message: types.Message, state: FSMContext):
-    await state.clear()
-    buttons = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="❌ Отмена", callback_data="support_cancel")]
-    ])
-    await message.answer(
-        "💬 Связь с поддержкой\n\n"
-        "Напишите ваше сообщение или вопрос.\n"
-        "Администратор получит его и ответит вам.",
-        reply_markup=buttons
-    )
-    await state.set_state(SupportMessage.entering_message)
-
-
-@router.callback_query(F.data == "support_cancel", SupportMessage.entering_message)
-async def support_cancel(callback: types.CallbackQuery, state: FSMContext):
-    await state.clear()
-    await callback.message.edit_text("❌ Отменено")
-    await callback.answer()
-
-
-@router.message(SupportMessage.entering_message)
-async def support_send(message: types.Message, state: FSMContext):
-    user = message.from_user
-    text = message.text.strip()
-    
-    if len(text) < 3:
-        await message.answer("❌ Сообщение слишком короткое!")
-        return
-    
-    # Отправляем админу
-    admin_text = (
-        f"💬 Сообщение в поддержку!\n\n"
-        f"👤 От: {user.full_name}\n"
-        f"🆔 ID: {user.id}\n"
-        f"📝 Сообщение:\n{text}"
-    )
-    
-    buttons = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="💬 Ответить", callback_data=f"support_reply:{user.id}")]
-    ])
-    
-    try:
-        await bot.send_message(ADMIN_ID, admin_text, reply_markup=buttons)
-        await message.answer(
-            "✅ Сообщение отправлено!\n\n"
-            "Администратор получит его и ответит вам в ближайшее время.",
-            reply_markup=get_main_keyboard(message.from_user.id)
-        )
-    except Exception as e:
-        logging.error(f"Support message error: {e}")
-        await message.answer("❌ Ошибка отправки. Попробуйте позже.")
-    
-    await state.clear()
-
-
-@router.callback_query(F.data.startswith("support_reply:"))
-async def support_reply_start(callback: types.CallbackQuery, state: FSMContext):
-    if callback.from_user.id != ADMIN_ID:
-        await callback.answer("⛔ Нет доступа", show_alert=True)
-        return
-    
-    user_id = int(callback.data.split(":")[1])
-    await state.update_data(reply_to_user=user_id)
-    await callback.message.answer(
-        f"💬 Введите ответ для пользователя ID {user_id}:"
-    )
-    await state.set_state(SupportMessage.waiting_reply)
-    await callback.answer()
-
-
-@router.message(SupportMessage.waiting_reply)
-async def support_reply_send(message: types.Message, state: FSMContext):
-    if message.from_user.id != ADMIN_ID:
-        await state.clear()
-        return
-    
-    data = await state.get_data()
-    user_id = data.get("reply_to_user")
-    
-    if not user_id:
-        await message.answer("❌ Ошибка: не найден пользователь")
-        await state.clear()
-        return
-    
-    try:
-        await bot.send_message(
-            user_id,
-            f"💬 Ответ от администратора:\n\n{message.text}"
-        )
-        await message.answer("✅ Ответ отправлен!")
-    except Exception as e:
-        logging.error(f"Support reply error: {e}")
-        await message.answer(f"❌ Ошибка: {e}")
-    
-    await state.clear()
 
 # ==================== БЭКАП ====================
 
