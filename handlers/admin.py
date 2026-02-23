@@ -11,14 +11,17 @@ from database import (
     assign_category_to_worker, remove_category_from_worker,
     get_worker_categories, get_workers_in_category,
     get_worker_recent_entries, get_entry_by_id,
-    delete_entry_by_id, update_entry_quantity
+    delete_entry_by_id, update_entry_quantity,
+    update_category, update_work_item, get_work_by_code
 )
+
 from states import (
     AdminAddCategory, AdminAddWork, AdminAddWorker,
     AdminAssignCategory, AdminRemoveCategory,
     AdminEditPrice, AdminRenameWorker,
     AdminDeleteCategory, AdminDeleteWork, AdminDeleteWorker,
     AdminManageEntries
+    AdminEditCategory, AdminEditWork  
 )
 from keyboards import get_add_keyboard, get_edit_keyboard, get_delete_keyboard, get_info_keyboard
 from utils import format_date, send_long_message
@@ -717,4 +720,320 @@ async def admin_entry_delete_confirm(callback: types.CallbackQuery, state: FSMCo
 async def admin_entries_back(callback: types.CallbackQuery, state: FSMContext):
     await state.clear()
     await callback.message.edit_text("👌 Ок")
+    await callback.answer()
+
+
+# ==================== РЕДАКТИРОВАНИЕ КАТЕГОРИИ ====================
+
+@router.message(F.text == "✏️ Редактировать категорию", AdminFilter())
+async def edit_category_start(message: types.Message, state: FSMContext):
+    await state.clear()
+    cats = await get_categories()
+    if not cats:
+        await message.answer("📂 Нет категорий.")
+        return
+    buttons = [[InlineKeyboardButton(text=f"{e} {n}", callback_data=f"ec:{c}")] for c, n, e in cats]
+    buttons.append([InlineKeyboardButton(text="❌ Отмена", callback_data="cdel")])
+    await message.answer("Выберите категорию для редактирования:",
+                         reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+    await state.set_state(AdminEditCategory.choosing_category)
+
+
+@router.callback_query(F.data.startswith("ec:"), AdminEditCategory.choosing_category)
+async def edit_category_chosen(callback: types.CallbackQuery, state: FSMContext):
+    code = callback.data.split(":")[1]
+    cats = await get_categories()
+    cat_info = next(((c, n, e) for c, n, e in cats if c == code), None)
+    if not cat_info:
+        await callback.answer("Не найдена", show_alert=True)
+        await state.clear()
+        return
+    
+    await state.update_data(cat_code=code, cat_name=cat_info[1], cat_emoji=cat_info[2])
+    
+    buttons = [
+        [InlineKeyboardButton(text="✏️ Изменить название", callback_data="ec_act:name")],
+        [InlineKeyboardButton(text="🎨 Изменить эмодзи", callback_data="ec_act:emoji")],
+        [InlineKeyboardButton(text="🔙 Назад", callback_data="ec_act:back")]
+    ]
+    
+    await callback.message.edit_text(
+        f"Категория: {cat_info[2]} {cat_info[1]}\n"
+        f"Код: {code}\n\n"
+        f"Что изменить?",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
+    )
+    await state.set_state(AdminEditCategory.choosing_action)
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("ec_act:"), AdminEditCategory.choosing_action)
+async def edit_category_action(callback: types.CallbackQuery, state: FSMContext):
+    action = callback.data.split(":")[1]
+    
+    if action == "name":
+        data = await state.get_data()
+        await callback.message.edit_text(
+            f"Текущее название: {data['cat_name']}\n\n"
+            f"Введите новое название:"
+        )
+        await state.set_state(AdminEditCategory.entering_new_name)
+    elif action == "emoji":
+        data = await state.get_data()
+        await callback.message.edit_text(
+            f"Текущий эмодзи: {data['cat_emoji']}\n\n"
+            f"Введите новый эмодзи:"
+        )
+        await state.set_state(AdminEditCategory.entering_new_emoji)
+    elif action == "back":
+        await callback.message.edit_text("❌ Отменено.")
+        await state.clear()
+    
+    await callback.answer()
+
+
+@router.message(AdminEditCategory.entering_new_name)
+async def edit_category_new_name(message: types.Message, state: FSMContext):
+    new_name = message.text.strip()
+    data = await state.get_data()
+    
+    await update_category(data['cat_code'], new_name=new_name)
+    
+    await message.answer(
+        f"✅ Название изменено!\n\n"
+        f"Было: {data['cat_name']}\n"
+        f"Стало: {new_name}",
+        reply_markup=get_edit_keyboard()
+    )
+    await state.clear()
+
+
+@router.message(AdminEditCategory.entering_new_emoji)
+async def edit_category_new_emoji(message: types.Message, state: FSMContext):
+    new_emoji = message.text.strip()
+    if len(new_emoji) > 2:
+        await message.answer("❌ Введите один эмодзи!")
+        return
+    
+    data = await state.get_data()
+    
+    await update_category(data['cat_code'], new_emoji=new_emoji)
+    
+    await message.answer(
+        f"✅ Эмодзи изменён!\n\n"
+        f"Было: {data['cat_emoji']}\n"
+        f"Стало: {new_emoji}",
+        reply_markup=get_edit_keyboard()
+    )
+    await state.clear()
+
+
+# ==================== РЕДАКТИРОВАНИЕ РАБОТЫ ====================
+
+@router.message(F.text == "✏️ Редактировать работу", AdminFilter())
+async def edit_work_start(message: types.Message, state: FSMContext):
+    await state.clear()
+    cats = await get_categories()
+    if not cats:
+        await message.answer("📂 Нет категорий.")
+        return
+    buttons = [[InlineKeyboardButton(text=f"{e} {n}", callback_data=f"ew_cat:{c}")] for c, n, e in cats]
+    buttons.append([InlineKeyboardButton(text="❌ Отмена", callback_data="cdel")])
+    await message.answer("Выберите категорию:",
+                         reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+    await state.set_state(AdminEditWork.choosing_category)
+
+
+@router.callback_query(F.data.startswith("ew_cat:"), AdminEditWork.choosing_category)
+async def edit_work_category_chosen(callback: types.CallbackQuery, state: FSMContext):
+    cat_code = callback.data.split(":")[1]
+    await state.update_data(category_code=cat_code)
+    
+    items = await get_price_list()
+    cat_items = [i for i in items if i[4] == cat_code]  # category_code на позиции 4
+    
+    if not cat_items:
+        await callback.message.edit_text("📭 В этой категории нет работ.")
+        await state.clear()
+        await callback.answer()
+        return
+    
+    buttons = []
+    for code, name, price, price_type, *_ in cat_items:
+        unit_label = "м²" if price_type == "square" else "шт"
+        buttons.append([InlineKeyboardButton(
+            text=f"{name} ({int(price)} руб/{unit_label})",
+            callback_data=f"ew_work:{code}"
+        )])
+    buttons.append([InlineKeyboardButton(text="🔙 Назад", callback_data="ew_back")])
+    
+    await callback.message.edit_text(
+        "Выберите работу для редактирования:",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
+    )
+    await state.set_state(AdminEditWork.choosing_work)
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("ew_work:"), AdminEditWork.choosing_work)
+async def edit_work_chosen(callback: types.CallbackQuery, state: FSMContext):
+    work_code = callback.data.split(":")[1]
+    work_info = await get_work_by_code(work_code)
+    
+    if not work_info:
+        await callback.answer("Не найдена", show_alert=True)
+        await state.clear()
+        return
+    
+    code, name, price, price_type, cat_code, cat_name, cat_emoji = work_info
+    await state.update_data(
+        work_code=code,
+        work_name=name,
+        work_price=price,
+        work_price_type=price_type
+    )
+    
+    unit_label = "м²" if price_type == "square" else "шт"
+    
+    buttons = [
+        [InlineKeyboardButton(text="✏️ Изменить название", callback_data="ew_act:name")],
+        [InlineKeyboardButton(text="💰 Изменить цену", callback_data="ew_act:price")],
+        [InlineKeyboardButton(text="📐 Изменить тип оплаты", callback_data="ew_act:type")],
+        [InlineKeyboardButton(text="🔙 Назад", callback_data="ew_act:back")]
+    ]
+    
+    await callback.message.edit_text(
+        f"Работа: {name}\n"
+        f"Категория: {cat_emoji} {cat_name}\n"
+        f"Цена: {int(price)} руб/{unit_label}\n"
+        f"Тип оплаты: {'За м²' if price_type == 'square' else 'За штуку'}\n\n"
+        f"Что изменить?",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
+    )
+    await state.set_state(AdminEditWork.choosing_action)
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("ew_act:"), AdminEditWork.choosing_action)
+async def edit_work_action(callback: types.CallbackQuery, state: FSMContext):
+    action = callback.data.split(":")[1]
+    data = await state.get_data()
+    
+    if action == "name":
+        await callback.message.edit_text(
+            f"Текущее название: {data['work_name']}\n\n"
+            f"Введите новое название:"
+        )
+        await state.set_state(AdminEditWork.entering_new_name)
+    
+    elif action == "price":
+        unit_label = "м²" if data['work_price_type'] == 'square' else "шт"
+        await callback.message.edit_text(
+            f"Текущая цена: {int(data['work_price'])} руб/{unit_label}\n\n"
+            f"Введите новую цену:"
+        )
+        await state.set_state(AdminEditWork.entering_new_price)
+    
+    elif action == "type":
+        current_type = "За м²" if data['work_price_type'] == 'square' else "За штуку"
+        buttons = [
+            [InlineKeyboardButton(text="📦 За штуку", callback_data="ew_type:unit")],
+            [InlineKeyboardButton(text="📐 За м²", callback_data="ew_type:square")],
+            [InlineKeyboardButton(text="❌ Отмена", callback_data="ew_type:cancel")]
+        ]
+        await callback.message.edit_text(
+            f"Текущий тип: {current_type}\n\n"
+            f"Выберите новый тип оплаты:",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
+        )
+        await state.set_state(AdminEditWork.choosing_new_price_type)
+    
+    elif action == "back":
+        await callback.message.edit_text("❌ Отменено.")
+        await state.clear()
+    
+    await callback.answer()
+
+
+@router.message(AdminEditWork.entering_new_name)
+async def edit_work_new_name(message: types.Message, state: FSMContext):
+    new_name = message.text.strip()
+    data = await state.get_data()
+    
+    await update_work_item(data['work_code'], new_name=new_name)
+    
+    await message.answer(
+        f"✅ Название изменено!\n\n"
+        f"Было: {data['work_name']}\n"
+        f"Стало: {new_name}",
+        reply_markup=get_edit_keyboard()
+    )
+    await state.clear()
+
+
+@router.message(AdminEditWork.entering_new_price)
+async def edit_work_new_price(message: types.Message, state: FSMContext):
+    try:
+        new_price = float(message.text.replace(',', '.'))
+        if new_price <= 0:
+            raise ValueError
+    except ValueError:
+        await message.answer("❌ Введите положительное число!")
+        return
+    
+    data = await state.get_data()
+    unit_label = "м²" if data['work_price_type'] == 'square' else "шт"
+    
+    await update_work_item(data['work_code'], new_price=new_price)
+    
+    await message.answer(
+        f"✅ Цена изменена!\n\n"
+        f"Было: {int(data['work_price'])} руб/{unit_label}\n"
+        f"Стало: {int(new_price)} руб/{unit_label}",
+        reply_markup=get_edit_keyboard()
+    )
+    await state.clear()
+
+
+@router.callback_query(F.data.startswith("ew_type:"), AdminEditWork.choosing_new_price_type)
+async def edit_work_new_type(callback: types.CallbackQuery, state: FSMContext):
+    choice = callback.data.split(":")[1]
+    
+    if choice == "cancel":
+        await callback.message.edit_text("❌ Отменено.")
+        await state.clear()
+        await callback.answer()
+        return
+    
+    data = await state.get_data()
+    old_type = "За м²" if data['work_price_type'] == 'square' else "За штуку"
+    new_type = "За м²" if choice == 'square' else "За штуку"
+    
+    if choice == data['work_price_type']:
+        await callback.message.edit_text("ℹ️ Тип оплаты не изменился.")
+        await state.clear()
+        await callback.answer()
+        return
+    
+    await update_work_item(data['work_code'], new_price_type=choice)
+    
+    await callback.message.edit_text(
+        f"✅ Тип оплаты изменён!\n\n"
+        f"Было: {old_type}\n"
+        f"Стало: {new_type}\n\n"
+        f"💡 Цена осталась прежней: {int(data['work_price'])} руб"
+    )
+    await state.clear()
+    await callback.answer()
+
+
+@router.callback_query(F.data == "ew_back")
+async def edit_work_back(callback: types.CallbackQuery, state: FSMContext):
+    await state.clear()
+    cats = await get_categories()
+    buttons = [[InlineKeyboardButton(text=f"{e} {n}", callback_data=f"ew_cat:{c}")] for c, n, e in cats]
+    buttons.append([InlineKeyboardButton(text="❌ Отмена", callback_data="cdel")])
+    await callback.message.edit_text("Выберите категорию:",
+                                     reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+    await state.set_state(AdminEditWork.choosing_category)
     await callback.answer()
