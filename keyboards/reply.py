@@ -2,13 +2,14 @@ from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 from config import ADMIN_ID, MANAGER_IDS
 
 
-def get_main_keyboard(user_id=None):
+ddef get_main_keyboard(user_id=None):
     buttons = [
         [KeyboardButton(text="📝 Записать работу"),
          KeyboardButton(text="📋 Мои записи")],
         [KeyboardButton(text="💰 За сегодня"),
          KeyboardButton(text="📊 За месяц")],
-        [KeyboardButton(text="💳 Мой баланс")],
+        [KeyboardButton(text="💳 Мой баланс"),
+         KeyboardButton(text="💬 Написать вопрос")]  # ← ДОБАВЬ СЮДА
     ]
     if user_id and user_id == ADMIN_ID:
         buttons.append([KeyboardButton(text="👑 Админ-панель")])
@@ -66,7 +67,6 @@ def get_edit_keyboard():
          KeyboardButton(text="✏️ Переименовать")],
         [KeyboardButton(text="🔗 Назначить кат."),
          KeyboardButton(text="🔓 Убрать кат.")],
-        [KeyboardButton(text="💬 Сообщение админу")],
         [KeyboardButton(text="🔙 В админ-панель")]
     ], resize_keyboard=True)
 
