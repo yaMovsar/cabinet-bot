@@ -3,7 +3,7 @@ from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 
-from config import ADMIN_ID, MANAGER_IDS, BOT_TOKEN
+from config import ADMIN_ID, MANAGER_IDS  # ✅ Убрал BOT_TOKEN
 from database import add_worker, worker_exists, get_all_workers
 from keyboards import (
     get_main_keyboard, get_admin_keyboard, get_manager_keyboard,
@@ -13,7 +13,7 @@ from keyboards import (
 from handlers.filters import AdminFilter, StaffFilter
 
 router = Router()
-bot = Bot(token=BOT_TOKEN)
+# ✅ Убрал строку: bot = Bot(token=BOT_TOKEN)
 
 
 class MessageToAdmin(StatesGroup):
@@ -146,11 +146,11 @@ async def back_to_admin_panel(message: types.Message, state: FSMContext):
     else:
         await message.answer("🏠 Главное меню", reply_markup=get_main_keyboard(uid))
 
+
 @router.message(F.text.in_(["🔙 Назад", "🏠 Главное меню"]))
 async def back_handler(message: types.Message, state: FSMContext):
     await state.clear()
     await message.answer("🏠 Главное меню", reply_markup=get_main_keyboard(message.from_user.id))
-
 
 
 # ==================== СООБЩЕНИЕ АДМИНИСТРАТОРУ ====================
@@ -166,7 +166,7 @@ async def message_to_admin_start(message: types.Message, state: FSMContext):
 
 
 @router.message(MessageToAdmin.waiting_for_message)
-async def message_to_admin_send(message: types.Message, state: FSMContext):
+async def message_to_admin_send(message: types.Message, state: FSMContext, bot: Bot):  # ✅ Добавил bot: Bot
     if message.text == "🔙 Назад":
         await state.clear()
         await message.answer("❌ Отменено.", reply_markup=get_main_keyboard(message.from_user.id))
