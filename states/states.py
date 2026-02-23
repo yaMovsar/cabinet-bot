@@ -22,6 +22,11 @@ class WorkerDeleteEntry(StatesGroup):
     confirming = State()
 
 
+class SupportMessage(StatesGroup):
+    entering_message = State()
+    waiting_reply = State()
+
+
 # ==================== АДМИН: ДОБАВЛЕНИЕ ====================
 
 class AdminAddCategory(StatesGroup):
@@ -29,23 +34,21 @@ class AdminAddCategory(StatesGroup):
     entering_name = State()
     entering_emoji = State()
 
-class AdminEditWork(StatesGroup):
-    choosing_work = State()
-    choosing_action = State()
-    entering_new_name = State()
-    choosing_new_category = State()
-    choosing_new_unit = State()  # Добавлено
-
 
 class AdminAddWork(StatesGroup):
     choosing_category = State()
     entering_code = State()
     entering_name = State()
     entering_price = State()
-    choosing_unit = State()  # Добавлено
+    choosing_unit = State()
 
 
-# ==================== АДМИН: РЕДАКТИРОВАНИЕ ====================
+class AdminAddWorker(StatesGroup):          # ←←← ЭТОГО НЕ ХВАТАЛО! ТЕПЕРЬ ЕСТЬ
+    entering_id = State()
+    entering_name = State()
+
+
+# ==================== АДМИН: РАБОТА С РАБОТНИКАМИ ====================
 
 class AdminAssignCategory(StatesGroup):
     choosing_worker = State()
@@ -57,22 +60,31 @@ class AdminRemoveCategory(StatesGroup):
     choosing_category = State()
 
 
-class AdminEditPrice(StatesGroup):
-    choosing_item = State()
-    entering_new_price = State()
-
-
 class AdminRenameWorker(StatesGroup):
     choosing_worker = State()
     entering_name = State()
 
 
-class AdminManageEntries(StatesGroup):
-    choosing_worker = State()
-    viewing_entries = State()
+# ==================== АДМИН: РЕДАКТИРОВАНИЕ ====================
+
+class AdminEditPrice(StatesGroup):
+    choosing_item = State()
+    entering_new_price = State()
+
+
+class AdminEditCategory(StatesGroup):
+    choosing_category = State()
     choosing_action = State()
-    entering_new_quantity = State()
-    confirming_delete = State()
+    entering_new_name = State()
+    entering_new_emoji = State()
+
+
+class AdminEditWork(StatesGroup):
+    choosing_work = State()
+    choosing_action = State()
+    entering_new_name = State()
+    choosing_new_category = State()
+    choosing_new_unit = State()        # ты уже добавил — оставил
 
 
 # ==================== АДМИН: УДАЛЕНИЕ ====================
@@ -90,6 +102,14 @@ class AdminDeleteWork(StatesGroup):
 class AdminDeleteWorker(StatesGroup):
     choosing = State()
     confirming = State()
+
+
+class AdminManageEntries(StatesGroup):
+    choosing_worker = State()
+    viewing_entries = State()
+    choosing_action = State()
+    entering_new_quantity = State()
+    confirming_delete = State()
 
 
 # ==================== ДЕНЬГИ ====================
@@ -118,37 +138,12 @@ class AdminDeletePenalty(StatesGroup):
     confirming = State()
 
 
-# ==================== ОТЧЁТЫ ====================
+# ==================== ОТЧЁТЫ И НАПОМИНАНИЯ ====================
 
 class ReportWorker(StatesGroup):
     choosing_worker = State()
 
 
-# ==================== НАПОМИНАНИЯ ====================
-
 class AdminReminderSettings(StatesGroup):
     main_menu = State()
     entering_time = State()
-
-
-# ==================== РЕДАКТИРОВАНИЕ КАТЕГОРИЙ/РАБОТ ====================
-
-class AdminEditCategory(StatesGroup):
-    choosing_category = State()
-    choosing_action = State()
-    entering_new_name = State()
-    entering_new_emoji = State()
-
-
-class AdminEditWork(StatesGroup):
-    choosing_work = State()
-    choosing_action = State()
-    entering_new_name = State()
-    choosing_new_category = State()
-
-
-# ==================== ПОДДЕРЖКА ====================
-
-class SupportMessage(StatesGroup):
-    entering_message = State()
-    waiting_reply = State()
