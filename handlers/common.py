@@ -134,21 +134,22 @@ async def menu_money(message: types.Message, state: FSMContext):
 
 # ==================== КНОПКИ НАЗАД ====================
 
-@router.message(F.text.in_(["🔙 В админ-панель", "🔙 Назад", "🏠 Главное меню"]))
-async def back_handler(message: types.Message, state: FSMContext):
+@router.message(F.text == "🔙 В админ-панель")
+async def back_to_admin_panel(message: types.Message, state: FSMContext):
     await state.clear()
     uid = message.from_user.id
     
-    if message.text == "🔙 В админ-панель":
-        if uid == ADMIN_ID:
-            await message.answer("👑 Админ-панель", reply_markup=get_admin_keyboard())
-        elif uid in MANAGER_IDS:
-            await message.answer("📊 Панель отчётов", reply_markup=get_manager_keyboard())
-        else:
-            await message.answer("🏠 Главное меню", reply_markup=get_main_keyboard(uid))
+    if uid == ADMIN_ID:
+        await message.answer("👑 Админ-панель", reply_markup=get_admin_keyboard())
+    elif uid in MANAGER_IDS:
+        await message.answer("📊 Панель отчётов", reply_markup=get_manager_keyboard())
     else:
-        # "🔙 Назад" и "🏠 Главное меню" — оба ведут в главное меню
         await message.answer("🏠 Главное меню", reply_markup=get_main_keyboard(uid))
+
+@router.message(F.text.in_(["🔙 Назад", "🏠 Главное меню"]))
+async def back_handler(message: types.Message, state: FSMContext):
+    await state.clear()
+    await message.answer("🏠 Главное меню", reply_markup=get_main_keyboard(message.from_user.id))
 
 
 
