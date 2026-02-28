@@ -1,4 +1,4 @@
-from aiogram import Router, types, F, Bot
+﻿from aiogram import Router, types, F, Bot
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
@@ -52,7 +52,7 @@ async def cmd_start(message: types.Message, state: FSMContext, is_admin: bool, i
             f"Привет, {message.from_user.first_name}! 👋\n"
             "Записывайте работу каждый день!"
         )
-    
+
     await message.answer(text, reply_markup=get_main_keyboard(uid))
 
 
@@ -70,16 +70,14 @@ async def cancel_callback(callback: types.CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
-# ==================== НАВИГАЦИЯ ====================
-
-@router.message(F.text == "👑 Админ-панель")
+@router.message(F.text == "🖥 Админ-панель")
 async def admin_panel(message: types.Message, state: FSMContext, is_admin: bool, **kwargs):
     if not is_admin:
         await message.answer("⛔ Нет доступа.")
         return
     await state.clear()
     await message.answer(
-        "👑 Админ-панель\n\n"
+        "🖥 Админ-панель\n\n"
         "📋 — Сводки и отчёты\n"
         "➕ — Добавить данные\n"
         "✏️ — Редактировать\n"
@@ -99,8 +97,6 @@ async def manager_panel(message: types.Message, state: FSMContext, is_manager: b
     await state.clear()
     await message.answer("📊 Панель отчётов", reply_markup=get_manager_keyboard())
 
-
-# ==================== МЕНЮ ====================
 
 @router.message(F.text == "➕ Добавить", AdminFilter())
 async def menu_add(message: types.Message, state: FSMContext):
@@ -135,15 +131,12 @@ async def menu_money(message: types.Message, state: FSMContext):
     )
 
 
-# ==================== КНОПКИ НАЗАД ====================
-
 @router.message(F.text == "🔙 В админ-панель")
 async def back_to_admin_panel(message: types.Message, state: FSMContext):
     await state.clear()
     uid = message.from_user.id
-    
     if uid == ADMIN_ID:
-        await message.answer("👑 Админ-панель", reply_markup=get_admin_keyboard())
+        await message.answer("🖥 Админ-панель", reply_markup=get_admin_keyboard())
     elif uid in MANAGER_IDS:
         await message.answer("📊 Панель отчётов", reply_markup=get_manager_keyboard())
     else:
@@ -155,8 +148,6 @@ async def back_handler(message: types.Message, state: FSMContext):
     await state.clear()
     await message.answer("🏠 Главное меню", reply_markup=get_main_keyboard(message.from_user.id))
 
-
-# ==================== СООБЩЕНИЕ АДМИНИСТРАТОРУ ====================
 
 @router.message(F.text == "💬 Написать вопрос")
 async def message_to_admin_start(message: types.Message, state: FSMContext):
@@ -174,20 +165,17 @@ async def message_to_admin_send(message: types.Message, state: FSMContext, bot: 
         await state.clear()
         await message.answer("❌ Отменено.", reply_markup=get_main_keyboard(message.from_user.id))
         return
-    
-    # Получаем имя отправителя
+
     workers = await get_all_workers()
     sender_name = next((name for tid, name in workers if tid == message.from_user.id), "Неизвестный")
-    
-    # Кнопка "Ответить"
+
     reply_kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(
             text="✉️ Ответить",
             callback_data=f"reply_to:{message.from_user.id}"
         )]
     ])
-    
-    # Отправляем админу с кнопкой
+
     await bot.send_message(
         ADMIN_ID,
         f"📨 Сообщение от работника:\n\n"
@@ -196,7 +184,7 @@ async def message_to_admin_send(message: types.Message, state: FSMContext, bot: 
         f"📝 {message.text}",
         reply_markup=reply_kb
     )
-    
+
     await message.answer(
         "✅ Сообщение отправлено администратору!",
         reply_markup=get_main_keyboard(message.from_user.id)
@@ -204,22 +192,16 @@ async def message_to_admin_send(message: types.Message, state: FSMContext, bot: 
     await state.clear()
 
 
-# ==================== ОТВЕТ РАБОТНИКУ ====================
-
 @router.callback_query(F.data.startswith("reply_to:"))
 async def reply_to_worker_start(callback: types.CallbackQuery, state: FSMContext):
-    # Проверяем что это админ
     if callback.from_user.id != ADMIN_ID:
         await callback.answer("⛔ Только админ может отвечать", show_alert=True)
         return
-    
-    # Получаем ID работника из callback_data
+
     worker_id = int(callback.data.split(":")[1])
-    
-    # Сохраняем ID работника в state
     await state.update_data(worker_id=worker_id)
     await state.set_state(ReplyToWorker.waiting_for_reply)
-    
+
     await callback.message.answer(
         "✍️ Напишите ответ работнику:\n\n"
         "(или /cancel для отмены)"
@@ -229,22 +211,19 @@ async def reply_to_worker_start(callback: types.CallbackQuery, state: FSMContext
 
 @router.message(ReplyToWorker.waiting_for_reply)
 async def reply_to_worker_send(message: types.Message, state: FSMContext, bot: Bot):
-    # Проверяем отмену
     if message.text == "/cancel":
         await state.clear()
         await message.answer("❌ Отменено.", reply_markup=get_admin_keyboard())
         return
-    
-    # Получаем ID работника из state
+
     data = await state.get_data()
     worker_id = data.get("worker_id")
-    
+
     if not worker_id:
         await state.clear()
         await message.answer("❌ Ошибка. Попробуйте снова.", reply_markup=get_admin_keyboard())
         return
-    
-    # Отправляем ответ работнику
+
     try:
         await bot.send_message(
             worker_id,
@@ -260,5 +239,5 @@ async def reply_to_worker_send(message: types.Message, state: FSMContext, bot: B
             f"❌ Не удалось отправить: {e}",
             reply_markup=get_admin_keyboard()
         )
-    
+
     await state.clear()
