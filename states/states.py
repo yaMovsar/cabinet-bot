@@ -22,6 +22,14 @@ class WorkerDeleteEntry(StatesGroup):
     confirming = State()
 
 
+# ✅ НОВОЕ: редактирование записи работником
+class WorkerEditEntry(StatesGroup):
+    choosing_entry = State()
+    choosing_action = State()
+    entering_new_quantity = State()
+    confirming_delete = State()
+
+
 # ==================== АДМИН: ДОБАВЛЕНИЕ ====================
 
 class AdminAddCategory(StatesGroup):
@@ -34,7 +42,7 @@ class AdminAddWork(StatesGroup):
     choosing_category = State()
     entering_code = State()
     entering_name = State()
-    choosing_price_type = State()  # ← НОВОЕ
+    choosing_price_type = State()
     entering_price = State()
 
 
@@ -72,6 +80,7 @@ class AdminManageEntries(StatesGroup):
     entering_new_quantity = State()
     confirming_delete = State()
 
+
 class AdminEditCategory(StatesGroup):
     choosing_category = State()
     choosing_action = State()
@@ -86,6 +95,7 @@ class AdminEditWork(StatesGroup):
     entering_new_name = State()
     choosing_new_price_type = State()
     entering_new_price = State()
+
 
 # ==================== АДМИН: УДАЛЕНИЕ ====================
 
@@ -133,6 +143,11 @@ class AdminDeletePenalty(StatesGroup):
 # ==================== ОТЧЁТЫ ====================
 
 class ReportWorker(StatesGroup):
+    choosing_worker = State()
+
+
+# ✅ НОВОЕ: выбор работника для сводки за месяц
+class MonthlySummaryWorker(StatesGroup):
     choosing_worker = State()
 
 

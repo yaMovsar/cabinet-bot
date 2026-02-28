@@ -11,10 +11,10 @@ from database import (
     add_work, get_daily_total, get_monthly_total,
     get_monthly_by_days, get_price_list,
     get_worker_entries_by_custom_date, get_entry_by_id,
-    delete_entry_by_id,
+    delete_entry_by_id, update_entry_quantity,
     get_worker_full_stats, get_worker_advances, get_worker_penalties
 )
-from states import WorkEntry, ViewEntries, WorkerDeleteEntry
+from states import WorkEntry, ViewEntries, WorkerDeleteEntry, WorkerEditEntry
 from keyboards import make_date_picker, make_work_buttons
 from utils import format_date, format_date_short, parse_user_date, send_long_message, MONTHS_RU
 from keyboards import get_main_keyboard
@@ -39,6 +39,14 @@ def to_date_str(value) -> str:
 def is_today(date_value) -> bool:
     """Проверяет является ли дата сегодняшней"""
     return to_date_str(date_value) == date.today().isoformat()
+
+
+def can_edit_date(date_value) -> bool:
+    """Проверяет можно ли редактировать запись (сегодня или вчера)"""
+    date_str = to_date_str(date_value)
+    today = date.today()
+    yesterday = today - timedelta(days=1)
+    return date_str in (today.isoformat(), yesterday.isoformat())
 
 
 # ==================== ЗАПИСАТЬ РАБОТУ ====================
@@ -99,7 +107,7 @@ async def custom_date_entered(message: types.Message, state: FSMContext):
         buttons.append([InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")])
         await message.answer(
             f"📅 Дата: {format_date(chosen_date)}\n"
-            f"📋 {worker_cats[0][2]} {worker_cats[0][1]}\n\nВыберите работу:",
+            f"📁 {worker_cats[0][2]} {worker_cats[0][1]}\n\nВыберите работу:",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
         )
         await state.set_state(WorkEntry.choosing_work)
@@ -132,7 +140,7 @@ async def show_category_or_work(callback, state, chosen_date):
         buttons.append([InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")])
         await callback.message.edit_text(
             f"📅 Дата: {format_date(chosen_date)}\n"
-            f"📋 {worker_cats[0][2]} {worker_cats[0][1]}\n\nВыберите работу:",
+            f"📁 {worker_cats[0][2]} {worker_cats[0][1]}\n\nВыберите работу:",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
         )
         await state.set_state(WorkEntry.choosing_work)
@@ -212,29 +220,28 @@ async def work_back_to_categories(callback: types.CallbackQuery, state: FSMConte
 async def work_chosen(callback: types.CallbackQuery, state: FSMContext):
     code = callback.data.split(":")[1]
     items = await get_price_list_for_worker(callback.from_user.id)
-    # код, название, цена, категория, тип_цены
     info = next(((c, n, p, cat, pt) for c, n, p, cat, pt in items if c == code), None)
     if not info:
         await callback.answer("Не найдено", show_alert=True)
         return
-    
-    price_type = info[4]  # 'unit' или 'square'
+
+    price_type = info[4]
     await state.update_data(work_info={
-        "code": info[0], 
-        "name": info[1], 
-        "price": info[2], 
+        "code": info[0],
+        "name": info[1],
+        "price": info[2],
         "price_type": price_type
     })
-    
+
     data = await state.get_data()
-    
+
     if price_type == 'square':
         prompt = f"📅 Дата: {format_date(data['work_date'])}\n" \
                  f"{info[1]} ({int(info[2])} руб/м²)\n\nВведите площадь (м²):"
     else:
         prompt = f"📅 Дата: {format_date(data['work_date'])}\n" \
                  f"{info[1]} ({int(info[2])} руб/шт)\n\nВведите количество:"
-    
+
     await callback.message.edit_text(prompt)
     await state.set_state(WorkEntry.entering_quantity)
     await callback.answer()
@@ -245,14 +252,13 @@ async def quantity_entered(message: types.Message, state: FSMContext):
     data = await state.get_data()
     info = data["work_info"]
     price_type = info.get("price_type", "unit")
-    
+
     try:
-        # Для square разрешаем дробные числа
         if price_type == 'square':
             qty = float(message.text.replace(',', '.'))
         else:
             qty = int(message.text)
-        
+
         if qty <= 0:
             raise ValueError
     except ValueError:
@@ -271,10 +277,10 @@ async def quantity_entered(message: types.Message, state: FSMContext):
             [InlineKeyboardButton(text="✏️ Изменить количество", callback_data="confirm_large:edit")],
             [InlineKeyboardButton(text="❌ Отмена", callback_data="confirm_large:cancel")]
         ]
-        
+
         unit_label = "м²" if price_type == 'square' else "шт"
         qty_display = f"{qty:.2f}" if price_type == 'square' else str(int(qty))
-        
+
         await message.answer(
             f"⚠️ Внимание! Большая сумма!\n\n"
             f"📅 Дата: {format_date(data.get('work_date', date.today().isoformat()))}\n"
@@ -299,7 +305,7 @@ async def confirm_large_entry(callback: types.CallbackQuery, state: FSMContext):
         data = await state.get_data()
         info = data["work_info"]
         price_type = info.get("price_type", "unit")
-        
+
         if price_type == 'square':
             await callback.message.edit_text("Введите правильную площадь (м²):")
         else:
@@ -388,6 +394,423 @@ async def back_to_menu(callback: types.CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
+# ==================== МОИ ЗАПИСИ (с редактированием и удалением) ====================
+
+@router.message(F.text == "📁 Мои записи")
+async def my_entries(message: types.Message, state: FSMContext):
+    await state.clear()
+    await message.answer(
+        "📁 За какой день показать записи?",
+        reply_markup=make_date_picker("viewdate", "myback")
+    )
+    await state.set_state(ViewEntries.choosing_date)
+
+
+@router.callback_query(F.data.startswith("viewdate:"), ViewEntries.choosing_date)
+async def view_date_chosen(callback: types.CallbackQuery, state: FSMContext):
+    value = callback.data.split(":", 1)[1]
+    if value == "custom":
+        await callback.message.edit_text(
+            "📅 Введите дату в формате ДД.ММ.ГГГГ\n\nНапример: 25.05.2025"
+        )
+        await state.set_state(ViewEntries.entering_custom_date)
+        await callback.answer()
+        return
+    await show_entries_for_date(callback.message, state,
+                                callback.from_user.id, value, edit=True)
+    await callback.answer()
+
+
+@router.message(ViewEntries.entering_custom_date)
+async def view_custom_date(message: types.Message, state: FSMContext):
+    chosen = parse_user_date(message.text)
+    if not chosen:
+        await message.answer("❌ Неверный формат!\nВведите дату как ДД.ММ.ГГГГ\nНапример: 25.05.2025")
+        return
+    await show_entries_for_date(message, state,
+                                message.from_user.id, chosen.isoformat(), edit=False)
+
+
+async def show_entries_for_date(message, state, user_id, target_date, edit=False):
+    entries = await get_worker_entries_by_custom_date(user_id, target_date)
+    date_str = format_date(target_date)
+    can_edit = can_edit_date(target_date)
+
+    await state.update_data(view_date=target_date)
+
+    if not entries:
+        text = f"📭 Нет записей за {date_str}"
+        buttons = [[InlineKeyboardButton(text="🔙 Назад", callback_data="view_back")]]
+        if edit:
+            await message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+        else:
+            await message.answer(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+        await state.set_state(WorkerEditEntry.choosing_entry)
+        return
+
+    text = f"📁 Записи за {date_str}:\n\n"
+    buttons = []
+    day_total = 0
+
+    for entry_id, name, cat_name, cat_emoji, qty, price, total, created, price_type in entries:
+        time_str = created[11:16] if len(created) > 16 else ""
+        unit_label = "м²" if price_type == 'square' else "шт"
+        qty_display = f"{qty:.2f}" if price_type == 'square' else str(int(qty))
+
+        text += f"{cat_emoji} {name} x {qty_display} {unit_label} = {int(total)} руб ({time_str})\n"
+        day_total += total
+
+        # Кнопки редактирования только для сегодня/вчера
+        if can_edit:
+            buttons.append([InlineKeyboardButton(
+                text=f"✏️ {name} x {qty_display} {unit_label} ({int(total)} руб)",
+                callback_data=f"wedit:{entry_id}"
+            )])
+
+    text += f"\n💰 Итого: {int(day_total)} руб"
+    
+    if can_edit and buttons:
+        text += "\n\n✏️ Нажмите на запись для редактирования:"
+    elif not can_edit:
+        text += "\n\n⏰ Редактирование доступно только за сегодня и вчера"
+
+    buttons.append([InlineKeyboardButton(text="🔙 Назад", callback_data="view_back")])
+
+    if edit:
+        await message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+    else:
+        await message.answer(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+    await state.set_state(WorkerEditEntry.choosing_entry)
+
+
+@router.callback_query(F.data == "view_back")
+async def view_entries_back(callback: types.CallbackQuery, state: FSMContext):
+    await callback.message.edit_text(
+        "📁 За какой день показать записи?",
+        reply_markup=make_date_picker("viewdate", "myback")
+    )
+    await state.set_state(ViewEntries.choosing_date)
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("wedit:"), WorkerEditEntry.choosing_entry)
+async def worker_entry_chosen(callback: types.CallbackQuery, state: FSMContext):
+    entry_id = int(callback.data.split(":")[1])
+    entry = await get_entry_by_id(entry_id)
+    
+    if not entry:
+        await callback.answer("Не найдена", show_alert=True)
+        await state.clear()
+        return
+    
+    # Проверяем что это запись этого работника
+    if entry[6] != callback.from_user.id:
+        await callback.answer("Не ваша запись!", show_alert=True)
+        await state.clear()
+        return
+    
+    # Проверяем что можно редактировать
+    if not can_edit_date(entry[5]):
+        await callback.answer("Редактирование доступно только за сегодня и вчера", show_alert=True)
+        return
+
+    price_type = entry[8] if len(entry) > 8 else 'unit'
+    unit_label = "м²" if price_type == 'square' else "шт"
+    qty_display = f"{entry[2]:.2f}" if price_type == 'square' else str(int(entry[2]))
+
+    await state.update_data(
+        entry_id=entry_id, 
+        entry_name=entry[1],
+        entry_qty=entry[2], 
+        entry_total=entry[4],
+        entry_price=entry[3],
+        entry_price_type=price_type,
+        entry_date=entry[5]
+    )
+    
+    buttons = [
+        [InlineKeyboardButton(text="✏️ Изменить количество", callback_data="wact:edit")],
+        [InlineKeyboardButton(text="🗑 Удалить запись", callback_data="wact:delete")],
+        [InlineKeyboardButton(text="🔙 Назад", callback_data="wact:back")]
+    ]
+    
+    await callback.message.edit_text(
+        f"📦 {entry[1]}\n\n"
+        f"📅 {format_date(entry[5])}\n"
+        f"🔢 Количество: {qty_display} {unit_label}\n"
+        f"💵 Расценка: {int(entry[3])} руб/{unit_label}\n"
+        f"💰 Сумма: {int(entry[4])} руб\n\n"
+        f"Что сделать?",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
+    )
+    await state.set_state(WorkerEditEntry.choosing_action)
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("wact:"), WorkerEditEntry.choosing_action)
+async def worker_entry_action(callback: types.CallbackQuery, state: FSMContext):
+    action = callback.data.split(":")[1]
+    data = await state.get_data()
+    
+    if action == "edit":
+        price_type = data.get('entry_price_type', 'unit')
+        if price_type == 'square':
+            await callback.message.edit_text(
+                f"📦 {data['entry_name']}\n"
+                f"Текущее значение: {data['entry_qty']:.2f} м²\n\n"
+                f"Введите новую площадь (м²):"
+            )
+        else:
+            await callback.message.edit_text(
+                f"📦 {data['entry_name']}\n"
+                f"Текущее значение: {int(data['entry_qty'])} шт\n\n"
+                f"Введите новое количество:"
+            )
+        await state.set_state(WorkerEditEntry.entering_new_quantity)
+        
+    elif action == "delete":
+        price_type = data.get('entry_price_type', 'unit')
+        unit_label = "м²" if price_type == 'square' else "шт"
+        qty_display = f"{data['entry_qty']:.2f}" if price_type == 'square' else str(int(data['entry_qty']))
+        
+        buttons = [
+            [InlineKeyboardButton(text="✅ Да, удалить!", callback_data="wdel:yes")],
+            [InlineKeyboardButton(text="❌ Нет, отмена", callback_data="wdel:no")]
+        ]
+        await callback.message.edit_text(
+            f"⚠️ Удалить запись?\n\n"
+            f"📦 {data['entry_name']} x {qty_display} {unit_label} = {int(data['entry_total'])} руб",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
+        )
+        await state.set_state(WorkerEditEntry.confirming_delete)
+        
+    elif action == "back":
+        target_date = data.get('view_date', date.today().isoformat())
+        await show_entries_for_date(callback.message, state, 
+                                    callback.from_user.id, target_date, edit=True)
+    
+    await callback.answer()
+
+
+@router.message(WorkerEditEntry.entering_new_quantity)
+async def worker_new_quantity(message: types.Message, state: FSMContext):
+    data = await state.get_data()
+    price_type = data.get('entry_price_type', 'unit')
+    
+    try:
+        if price_type == 'square':
+            new_qty = float(message.text.replace(',', '.'))
+        else:
+            new_qty = int(message.text)
+        
+        if new_qty <= 0:
+            raise ValueError
+    except ValueError:
+        if price_type == 'square':
+            await message.answer("❌ Введите положительное число!\nПример: 12.5")
+        else:
+            await message.answer("❌ Введите положительное целое число!")
+        return
+    
+    entry_id = data['entry_id']
+    old_qty = data['entry_qty']
+    price = data['entry_price']
+    old_total = data['entry_total']
+    new_total = new_qty * price
+    
+    await update_entry_quantity(entry_id, new_qty)
+    
+    unit_label = "м²" if price_type == 'square' else "шт"
+    old_qty_display = f"{old_qty:.2f}" if price_type == 'square' else str(int(old_qty))
+    new_qty_display = f"{new_qty:.2f}" if price_type == 'square' else str(int(new_qty))
+    
+    await message.answer(
+        f"✅ Изменено!\n\n"
+        f"📦 {data['entry_name']}\n"
+        f"Было: {old_qty_display} {unit_label} = {int(old_total)} руб\n"
+        f"Стало: {new_qty_display} {unit_label} = {int(new_total)} руб",
+        reply_markup=get_main_keyboard(message.from_user.id)
+    )
+    await state.clear()
+
+
+@router.callback_query(F.data.startswith("wdel:"), WorkerEditEntry.confirming_delete)
+async def worker_delete_confirm(callback: types.CallbackQuery, state: FSMContext):
+    if callback.data.split(":")[1] == "yes":
+        data = await state.get_data()
+        deleted = await delete_entry_by_id(data["entry_id"])
+        
+        if deleted:
+            price_type = data.get('entry_price_type', 'unit')
+            unit_label = "м²" if price_type == 'square' else "шт"
+            qty_display = f"{data['entry_qty']:.2f}" if price_type == 'square' else str(int(data['entry_qty']))
+            
+            await callback.message.edit_text(
+                f"✅ Удалено!\n\n"
+                f"📦 {data['entry_name']} x {qty_display} {unit_label} = {int(data['entry_total'])} руб"
+            )
+            
+            # Уведомляем админа
+            if callback.from_user.id != ADMIN_ID:
+                try:
+                    await bot.send_message(
+                        ADMIN_ID,
+                        f"🗑 Работник удалил запись!\n\n"
+                        f"👤 {callback.from_user.full_name}\n"
+                        f"📦 {data['entry_name']} x {qty_display} {unit_label} = {int(data['entry_total'])} руб\n"
+                        f"📅 {format_date(data.get('entry_date', ''))}"
+                    )
+                except Exception as e:
+                    logging.error(f"Notify admin delete: {e}")
+        else:
+            await callback.message.edit_text("❌ Не найдена.")
+    else:
+        await callback.message.edit_text("❌ Отменено.")
+    
+    await state.clear()
+    await callback.answer()
+
+
+@router.callback_query(F.data == "myback")
+async def my_entries_back(callback: types.CallbackQuery, state: FSMContext):
+    await state.clear()
+    await callback.message.edit_text("👌 Ок")
+    await callback.answer()
+
+
+# ==================== МОЙ БАЛАНС ====================
+
+@router.message(F.text == "💳 Мой баланс")
+async def my_balance(message: types.Message, state: FSMContext):
+    await state.clear()
+    uid = message.from_user.id
+    today = date.today()
+    stats = await get_worker_full_stats(uid, today.year, today.month)
+    advances = await get_worker_advances(uid, today.year, today.month)
+    penalties = await get_worker_penalties(uid, today.year, today.month)
+
+    text = f"💰 Мой баланс — {MONTHS_RU[today.month]} {today.year}\n\n"
+    text += f"💰 Заработано: {int(stats['earned'])} руб\n"
+    text += f"📅 Рабочих дней: {stats['work_days']}\n"
+    text += f"💳 Авансы: {int(stats['advances'])} руб\n"
+    text += f"⚠️ Штрафы: {int(stats['penalties'])} руб\n"
+    text += f"📊 Остаток: {int(stats['balance'])} руб\n"
+
+    if advances:
+        text += f"\n📋 Авансы:\n"
+        for adv_id, amount, comment, adv_date, created in advances:
+            text += f"   ▪️ {format_date(adv_date)}: {int(amount)} руб"
+            if comment:
+                text += f" ({comment})"
+            text += "\n"
+
+    if penalties:
+        text += f"\n⚠️ Штрафы:\n"
+        for pen_id, amount, reason, pen_date, created in penalties:
+            text += f"   ▪️ {format_date(pen_date)}: {int(amount)} руб"
+            if reason:
+                text += f" ({reason})"
+            text += "\n"
+
+    if stats['work_days'] > 0:
+        avg = stats['earned'] / stats['work_days']
+        text += f"\n📈 Среднее в день: {int(avg)} руб"
+
+    await message.answer(text)
+
+
+# ==================== ЗАРАБОТОК ====================
+
+@router.message(F.text == "💰 За сегодня")
+async def show_daily(message: types.Message, state: FSMContext):
+    await state.clear()
+    uid = message.from_user.id
+    today = date.today()
+
+    rows = await get_daily_total(uid)
+    if not rows:
+        await message.answer("📭 Сегодня нет записей.")
+        return
+
+    all_items = await get_price_list()
+    names = {i[0]: i[1] for i in all_items}
+    text = f"📊 {today.strftime('%d.%m.%Y')}:\n\n"
+    total = 0
+    for code, qty, price, sub in rows:
+        text += f"▪️ {names.get(code, code)}: {int(qty)}шт x {int(price)} руб = {int(sub)} руб\n"
+        total += sub
+    text += f"\n💰 Итого за день: {int(total)} руб"
+
+    stats = await get_worker_full_stats(uid, today.year, today.month)
+    text += f"\n\n━━━━━━━━━━━━━━━━━━━\n"
+    text += f"📊 За {MONTHS_RU[today.month]}:\n"
+    text += f"💰 Заработано: {int(stats['earned'])} руб\n"
+    if stats['advances'] > 0:
+        text += f"💳 Авансы: {int(stats['advances'])} руб\n"
+    if stats['penalties'] > 0:
+        text += f"⚠️ Штрафы: {int(stats['penalties'])} руб\n"
+    text += f"📊 Остаток: {int(stats['balance'])} руб"
+
+    await message.answer(text)
+
+
+@router.message(F.text == "📊 За месяц")
+async def show_monthly(message: types.Message, state: FSMContext):
+    await state.clear()
+    uid = message.from_user.id
+    today = date.today()
+    rows = await get_monthly_by_days(uid, today.year, today.month)
+    if not rows:
+        await message.answer("📭 В этом месяце нет записей.")
+        return
+    text = f"📊 {MONTHS_RU[today.month]} {today.year}:\n\n"
+    current_date = ""
+    day_total = 0
+    grand_total = 0
+    work_days = 0
+    for work_date, name, qty, price, subtotal in rows:
+        if work_date != current_date:
+            if current_date != "":
+                text += f"   💰 За день: {int(day_total)} руб\n\n"
+            text += f"📅 {format_date(work_date)}:\n"
+            current_date = work_date
+            day_total = 0
+            work_days += 1
+        text += f"   ▪️ {name} x {int(qty)} = {int(subtotal)} руб\n"
+        day_total += subtotal
+        grand_total += subtotal
+    if current_date != "":
+        text += f"   💰 За день: {int(day_total)} руб\n"
+
+    text += f"\n━━━━━━━━━━━━━━━━━━━\n"
+    text += f"📊 Рабочих дней: {work_days}\n"
+    text += f"💰 Заработано: {int(grand_total)} руб\n"
+
+    stats = await get_worker_full_stats(uid, today.year, today.month)
+    if stats['advances'] > 0:
+        text += f"💳 Авансы: {int(stats['advances'])} руб\n"
+    if stats['penalties'] > 0:
+        text += f"⚠️ Штрафы: {int(stats['penalties'])} руб\n"
+    text += f"📊 К выплате: {int(stats['balance'])} руб"
+
+    if work_days > 0:
+        avg = grand_total / work_days
+        text += f"\n📈 Среднее в день: {int(avg)} руб"
+
+    await send_long_message(message, text)
+
+
+# ==================== БЭКАП ====================
+
+@router.message(F.text == "💾 Бэкап БД")
+async def manual_backup(message: types.Message, state: FSMContext):
+    if message.from_user.id != ADMIN_ID:
+        return
+    await state.clear()
+    from bot import send_backup
+    await send_backup(message.from_user.id)
+
+
 # ==================== ИМПОРТ ИЗ JSON ====================
 
 @router.message(F.document.file_name.endswith('.json'))
@@ -442,7 +865,6 @@ async def import_from_json(message: types.Message):
         }
 
         async with pool.acquire() as pg:
-            # Очищаем таблицы
             await pg.execute("DELETE FROM work_log")
             await pg.execute("DELETE FROM advances")
             await pg.execute("DELETE FROM penalties")
@@ -452,41 +874,35 @@ async def import_from_json(message: types.Message):
             await pg.execute("DELETE FROM categories")
             await pg.execute("DELETE FROM reminder_settings")
 
-            # Сбрасываем счётчики
             await pg.execute("ALTER SEQUENCE IF EXISTS work_log_id_seq RESTART WITH 1")
             await pg.execute("ALTER SEQUENCE IF EXISTS advances_id_seq RESTART WITH 1")
             await pg.execute("ALTER SEQUENCE IF EXISTS penalties_id_seq RESTART WITH 1")
 
-            # categories
             for row in data.get('categories', []):
                 await pg.execute(
                     "INSERT INTO categories (code, name, emoji) VALUES ($1, $2, $3)",
                     row['code'], row['name'], row['emoji'])
             stats['categories'] = len(data.get('categories', []))
 
-            # workers
             for row in data.get('workers', []):
                 await pg.execute(
                     "INSERT INTO workers (telegram_id, name, registered_at) VALUES ($1, $2, $3)",
                     row['telegram_id'], row['name'], parse_datetime(row['registered_at']))
             stats['workers'] = len(data.get('workers', []))
 
-            # price_list
             for row in data.get('price_list', []):
-                price_type = row.get('price_type', 'unit')  # Совместимость со старыми JSON
+                price_type = row.get('price_type', 'unit')
                 await pg.execute(
                     "INSERT INTO price_list (code, name, price, price_type, category_code, is_active) VALUES ($1, $2, $3, $4, $5, $6)",
                     row['code'], row['name'], row['price'], price_type, row['category_code'], row.get('is_active', True))
             stats['prices'] = len(data.get('price_list', []))
 
-            # worker_categories
             for row in data.get('worker_categories', []):
                 await pg.execute(
                     "INSERT INTO worker_categories (worker_id, category_code) VALUES ($1, $2)",
                     row['worker_id'], row['category_code'])
             stats['worker_cats'] = len(data.get('worker_categories', []))
 
-            # work_log
             for row in data.get('work_log', []):
                 await pg.execute(
                     "INSERT INTO work_log (worker_id, work_code, quantity, price_per_unit, total, work_date, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7)",
@@ -494,26 +910,23 @@ async def import_from_json(message: types.Message):
                     parse_date_local(row['work_date']), parse_datetime(row['created_at']))
             stats['work_logs'] = len(data.get('work_log', []))
 
-            # advances
             for row in data.get('advances', []):
                 await pg.execute(
                     "INSERT INTO advances (worker_id, amount, comment, advance_date, created_at) VALUES ($1, $2, $3, $4, $5)",
-                    row['worker_id'], row['amount'], row.get('comment', ''), 
+                    row['worker_id'], row['amount'], row.get('comment', ''),
                     parse_date_local(row['advance_date']), parse_datetime(row['created_at']))
             stats['advances'] = len(data.get('advances', []))
 
-            # penalties
             for row in data.get('penalties', []):
                 await pg.execute(
                     "INSERT INTO penalties (worker_id, amount, reason, penalty_date, created_at) VALUES ($1, $2, $3, $4, $5)",
-                    row['worker_id'], row['amount'], row.get('reason', ''), 
+                    row['worker_id'], row['amount'], row.get('reason', ''),
                     parse_date_local(row['penalty_date']), parse_datetime(row['created_at']))
             stats['penalties'] = len(data.get('penalties', []))
 
-            # reminder_settings
             for row in data.get('reminder_settings', []):
                 await pg.execute("""
-                    INSERT INTO reminder_settings 
+                    INSERT INTO reminder_settings
                     (id, evening_hour, evening_minute, late_hour, late_minute,
                      report_hour, report_minute, evening_enabled, late_enabled, report_enabled)
                     VALUES (1, $1, $2, $3, $4, $5, $6, $7, $8, $9)
@@ -537,279 +950,3 @@ async def import_from_json(message: types.Message):
     except Exception as e:
         logging.error(f"JSON Import error: {e}")
         await message.answer(f"❌ Ошибка импорта: {e}")
-
-
-# ==================== МОЙ БАЛАНС ====================
-
-@router.message(F.text == "💳 Мой баланс")
-async def my_balance(message: types.Message, state: FSMContext):
-    await state.clear()
-    uid = message.from_user.id
-    today = date.today()
-    stats = await get_worker_full_stats(uid, today.year, today.month)
-    advances = await get_worker_advances(uid, today.year, today.month)
-    penalties = await get_worker_penalties(uid, today.year, today.month)
-
-    text = f"💰 Мой баланс — {MONTHS_RU[today.month]} {today.year}\n\n"
-    text += f"💰 Заработано: {int(stats['earned'])} руб\n"
-    text += f"📅 Рабочих дней: {stats['work_days']}\n"
-    text += f"💳 Авансы: {int(stats['advances'])} руб\n"
-    text += f"⚠️ Штрафы: {int(stats['penalties'])} руб\n"
-    text += f"📊 Остаток: {int(stats['balance'])} руб\n"
-
-    if advances:
-        text += f"\n📋 Авансы:\n"
-        for adv_id, amount, comment, adv_date, created in advances:
-            text += f"   ▫️ {format_date(adv_date)}: {int(amount)} руб"
-            if comment:
-                text += f" ({comment})"
-            text += "\n"
-
-    if penalties:
-        text += f"\n⚠️ Штрафы:\n"
-        for pen_id, amount, reason, pen_date, created in penalties:
-            text += f"   ▫️ {format_date(pen_date)}: {int(amount)} руб"
-            if reason:
-                text += f" ({reason})"
-            text += "\n"
-
-    if stats['work_days'] > 0:
-        avg = stats['earned'] / stats['work_days']
-        text += f"\n📊 Среднее в день: {int(avg)} руб"
-
-    await message.answer(text)
-
-
-# ==================== МОИ ЗАПИСИ ====================
-
-@router.message(F.text == "📋 Мои записи")
-async def my_entries(message: types.Message, state: FSMContext):
-    await state.clear()
-    await message.answer(
-        "📋 За какой день показать записи?",
-        reply_markup=make_date_picker("viewdate", "myback")
-    )
-    await state.set_state(ViewEntries.choosing_date)
-
-
-@router.callback_query(F.data.startswith("viewdate:"), ViewEntries.choosing_date)
-async def view_date_chosen(callback: types.CallbackQuery, state: FSMContext):
-    value = callback.data.split(":", 1)[1]
-    if value == "custom":
-        await callback.message.edit_text(
-            "📅 Введите дату в формате ДД.ММ.ГГГГ\n\nНапример: 25.05.2025"
-        )
-        await state.set_state(ViewEntries.entering_custom_date)
-        await callback.answer()
-        return
-    await show_entries_for_date(callback.message, state,
-                                callback.from_user.id, value, edit=True)
-    await callback.answer()
-
-
-@router.message(ViewEntries.entering_custom_date)
-async def view_custom_date(message: types.Message, state: FSMContext):
-    chosen = parse_user_date(message.text)
-    if not chosen:
-        await message.answer("❌ Неверный формат!\nВведите дату как ДД.ММ.ГГГГ\nНапример: 25.05.2025")
-        return
-    await show_entries_for_date(message, state,
-                                message.from_user.id, chosen.isoformat(), edit=False)
-
-
-async def show_entries_for_date(message, state, user_id, target_date, edit=False):
-    entries = await get_worker_entries_by_custom_date(user_id, target_date)
-    date_str = format_date(target_date)
-
-    if not entries:
-        text = f"📭 Нет записей за {date_str}"
-        buttons = [[InlineKeyboardButton(text="🔙 Назад", callback_data="view_back")]]
-        if edit:
-            await message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
-        else:
-            await message.answer(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
-        await state.set_state(WorkerDeleteEntry.choosing_entry)
-        return
-
-    text = f"📋 Записи за {date_str}:\n\n"
-    buttons = []
-    day_total = 0
-
-    for entry_id, name, cat_name, cat_emoji, qty, price, total, created, price_type in entries:
-        time_str = created[11:16] if len(created) > 16 else ""
-        unit_label = "м²" if price_type == 'square' else "шт"
-        qty_display = f"{qty:.2f}" if price_type == 'square' else str(int(qty))
-        
-        text += f"{cat_emoji} {name} x {qty_display} {unit_label} = {int(total)} руб ({time_str})\n"
-        day_total += total
-
-        if is_today(target_date):
-            buttons.append([InlineKeyboardButton(
-                text=f"❌ {name} x {qty_display} {unit_label} ({int(total)} руб)",
-                callback_data=f"mydel:{entry_id}"
-            )])
-
-    text += f"\n💰 Итого: {int(day_total)} руб"
-    if is_today(target_date) and buttons:
-        text += "\n\nНажмите чтобы удалить:"
-
-    buttons.append([InlineKeyboardButton(text="🔙 Назад", callback_data="view_back")])
-
-    if edit:
-        await message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
-    else:
-        await message.answer(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
-    await state.set_state(WorkerDeleteEntry.choosing_entry)
-
-
-@router.callback_query(F.data == "view_back")
-async def view_entries_back(callback: types.CallbackQuery, state: FSMContext):
-    await callback.message.edit_text(
-        "📋 За какой день показать записи?",
-        reply_markup=make_date_picker("viewdate", "myback")
-    )
-    await state.set_state(ViewEntries.choosing_date)
-    await callback.answer()
-
-
-@router.callback_query(F.data.startswith("mydel:"), WorkerDeleteEntry.choosing_entry)
-async def my_entry_chosen(callback: types.CallbackQuery, state: FSMContext):
-    entry_id = int(callback.data.split(":")[1])
-    entry = await get_entry_by_id(entry_id)
-    if not entry:
-        await callback.answer("Не найдена", show_alert=True)
-        await state.clear()
-        return
-    if entry[6] != callback.from_user.id:
-        await callback.answer("Не ваша запись!", show_alert=True)
-        await state.clear()
-        return
-    
-    price_type = entry[8]
-    unit_label = "м²" if price_type == 'square' else "шт"
-    qty_display = f"{entry[2]:.2f}" if price_type == 'square' else str(int(entry[2]))
-    
-    await state.update_data(entry_id=entry_id, entry_name=entry[1],
-                            entry_qty=entry[2], entry_total=entry[4])
-    buttons = [
-        [InlineKeyboardButton(text="✅ Да, удалить!", callback_data="myconf:yes")],
-        [InlineKeyboardButton(text="❌ Отмена", callback_data="myconf:no")]
-    ]
-    await callback.message.edit_text(
-        f"⚠️ Удалить?\n\n📦 {entry[1]} x {qty_display} {unit_label} = {int(entry[4])} руб",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
-    )
-    await state.set_state(WorkerDeleteEntry.confirming)
-    await callback.answer()
-
-
-@router.callback_query(F.data.startswith("myconf:"), WorkerDeleteEntry.confirming)
-async def my_entry_confirm(callback: types.CallbackQuery, state: FSMContext):
-    if callback.data.split(":")[1] == "yes":
-        data = await state.get_data()
-        await delete_entry_by_id(data["entry_id"])
-        await callback.message.edit_text(
-            f"✅ Удалено: {data['entry_name']} x {int(data['entry_qty'])}")
-    else:
-        await callback.message.edit_text("❌ Отменено.")
-    await state.clear()
-    await callback.answer()
-
-
-@router.callback_query(F.data == "myback")
-async def my_entries_back(callback: types.CallbackQuery, state: FSMContext):
-    await state.clear()
-    await callback.message.edit_text("👌 Ок")
-    await callback.answer()
-
-
-# ==================== ЗАРАБОТОК ====================
-
-@router.message(F.text == "💰 За сегодня")
-async def show_daily(message: types.Message, state: FSMContext):
-    await state.clear()
-    uid = message.from_user.id
-    today = date.today()
-
-    rows = await get_daily_total(uid)
-    if not rows:
-        await message.answer("📭 Сегодня нет записей.")
-        return
-
-    all_items = await get_price_list()
-    names = {i[0]: i[1] for i in all_items}
-    text = f"📊 {today.strftime('%d.%m.%Y')}:\n\n"
-    total = 0
-    for code, qty, price, sub in rows:
-        text += f"▫️ {names.get(code, code)}: {int(qty)}шт x {int(price)} руб = {int(sub)} руб\n"
-        total += sub
-    text += f"\n💰 Итого за день: {int(total)} руб"
-
-    stats = await get_worker_full_stats(uid, today.year, today.month)
-    text += f"\n\n━━━━━━━━━━━━━━━━━━━\n"
-    text += f"📊 За {MONTHS_RU[today.month]}:\n"
-    text += f"💰 Заработано: {int(stats['earned'])} руб\n"
-    if stats['advances'] > 0:
-        text += f"💳 Авансы: {int(stats['advances'])} руб\n"
-    if stats['penalties'] > 0:
-        text += f"⚠️ Штрафы: {int(stats['penalties'])} руб\n"
-    text += f"📊 Остаток: {int(stats['balance'])} руб"
-
-    await message.answer(text)
-
-
-@router.message(F.text == "📊 За месяц")
-async def show_monthly(message: types.Message, state: FSMContext):
-    await state.clear()
-    uid = message.from_user.id
-    today = date.today()
-    rows = await get_monthly_by_days(uid, today.year, today.month)
-    if not rows:
-        await message.answer("📭 В этом месяце нет записей.")
-        return
-    text = f"📊 {MONTHS_RU[today.month]} {today.year}:\n\n"
-    current_date = ""
-    day_total = 0
-    grand_total = 0
-    work_days = 0
-    for work_date, name, qty, price, subtotal in rows:
-        if work_date != current_date:
-            if current_date != "":
-                text += f"   💰 За день: {int(day_total)} руб\n\n"
-            text += f"📅 {format_date(work_date)}:\n"
-            current_date = work_date
-            day_total = 0
-            work_days += 1
-        text += f"   ▫️ {name} x {int(qty)} = {int(subtotal)} руб\n"
-        day_total += subtotal
-        grand_total += subtotal
-    if current_date != "":
-        text += f"   💰 За день: {int(day_total)} руб\n"
-
-    text += f"\n━━━━━━━━━━━━━━━━━━━\n"
-    text += f"📊 Рабочих дней: {work_days}\n"
-    text += f"💰 Заработано: {int(grand_total)} руб\n"
-
-    stats = await get_worker_full_stats(uid, today.year, today.month)
-    if stats['advances'] > 0:
-        text += f"💳 Авансы: {int(stats['advances'])} руб\n"
-    if stats['penalties'] > 0:
-        text += f"⚠️ Штрафы: {int(stats['penalties'])} руб\n"
-    text += f"📊 К выплате: {int(stats['balance'])} руб"
-
-    if work_days > 0:
-        avg = grand_total / work_days
-        text += f"\n📊 Среднее в день: {int(avg)} руб"
-
-    await send_long_message(message, text)
-
-
-# ==================== БЭКАП ====================
-
-@router.message(F.text == "💾 Бэкап БД")
-async def manual_backup(message: types.Message, state: FSMContext):
-    if message.from_user.id != ADMIN_ID:
-        return
-    await state.clear()
-    from bot import send_backup
-    await send_backup(message.from_user.id)

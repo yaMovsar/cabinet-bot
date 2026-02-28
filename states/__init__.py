@@ -1,23 +1,23 @@
 from .states import (
-    WorkEntry, ViewEntries, WorkerDeleteEntry,
+    WorkEntry, ViewEntries, WorkerDeleteEntry, WorkerEditEntry,
     AdminAddCategory, AdminAddWork, AdminAddWorker,
     AdminAssignCategory, AdminRemoveCategory,
     AdminEditPrice, AdminRenameWorker, AdminManageEntries,
+    AdminEditCategory, AdminEditWork,
     AdminDeleteCategory, AdminDeleteWork, AdminDeleteWorker,
-    AdminAdvance, AdminDeleteAdvance,
-    AdminPenalty, AdminDeletePenalty,
-    ReportWorker, AdminReminderSettings,
-    AdminEditCategory, AdminEditWork  # ← ДОБАВЬ ЭТО
+    AdminAdvance, AdminDeleteAdvance, AdminPenalty, AdminDeletePenalty,
+    ReportWorker, MonthlySummaryWorker,
+    AdminReminderSettings
 )
 
 __all__ = [
-    'WorkEntry', 'ViewEntries', 'WorkerDeleteEntry',
+    'WorkEntry', 'ViewEntries', 'WorkerDeleteEntry', 'WorkerEditEntry',
     'AdminAddCategory', 'AdminAddWork', 'AdminAddWorker',
     'AdminAssignCategory', 'AdminRemoveCategory',
     'AdminEditPrice', 'AdminRenameWorker', 'AdminManageEntries',
+    'AdminEditCategory', 'AdminEditWork',
     'AdminDeleteCategory', 'AdminDeleteWork', 'AdminDeleteWorker',
-    'AdminAdvance', 'AdminDeleteAdvance',
-    'AdminPenalty', 'AdminDeletePenalty',
-    'ReportWorker', 'AdminReminderSettings',
-    'AdminEditCategory', 'AdminEditWork'  # ← ДОБАВЬ ЭТО
+    'AdminAdvance', 'AdminDeleteAdvance', 'AdminPenalty', 'AdminDeletePenalty',
+    'ReportWorker', 'MonthlySummaryWorker',
+    'AdminReminderSettings'
 ]

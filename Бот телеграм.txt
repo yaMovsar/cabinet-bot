@@ -1,7 +1,7 @@
 cd C:\Users\user\Desktop\cabinet-bot
 
 git add .
-git commit -m "Заменён импорт SQLite на JSON"
+git commit -m ""
 git push origin main
 
 
@@ -14,7 +14,7 @@ Railway: https://railway.app (проект cabinet-bot)
 Стек:
 - Python 3.11
 - aiogram 3.4.1
-- SQLite (aiosqlite)
+- PostgreSQL 
 - APScheduler
 - openpyxl
 - Railway (хостинг + Volume)
