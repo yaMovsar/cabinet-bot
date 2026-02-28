@@ -1,50 +1,170 @@
-cd C:\Users\user\Desktop\cabinet-bot
-
-git add .
-git commit -m ""
-git push origin main
-
-
-
-=== МОЙ БОТ ===
-
+🤖 МОЙ TELEGRAM БОТ — КОНФИГ ДЛЯ ИИ
+📋 Общая информация
+Название: cabinet-bot (Бот учёта работ на производстве)
 GitHub: https://github.com/yaMovsar/cabinet-bot
-Railway: https://railway.app (проект cabinet-bot)
+Хостинг: Railway.app
+База данных: PostgreSQL (на Railway)
 
-Стек:
-- Python 3.11
-- aiogram 3.4.1
-- PostgreSQL 
-- APScheduler
-- openpyxl
-- Railway (хостинг + Volume)
+🛠 Стек технологий
+Python 3.11
+aiogram 3.4.1
+PostgreSQL (asyncpg)
+APScheduler
+openpyxl (Excel отчёты)
+📁 Структура проекта
+text
 
-Структура:
-- bot.py — точка входа
-- database.py — база данных
-- reports.py — Excel отчёты
-- config.py — токены
-- handlers/ — обработчики
-- keyboards/ — клавиатуры
-- states/ — FSM состояния
-- middlewares/ — middleware
-- utils/ — утилиты
+cabinet-bot/
+├── bot.py                 # Точка входа, scheduler, бэкапы
+├── config.py              # Токены, ADMIN_ID, MANAGER_IDS
+├── database.py            # Все функции работы с PostgreSQL
+├── reports.py             # Генерация Excel отчётов
+├── handlers/
+│   ├── __init__.py        # setup_routers()
+│   ├── common.py          # /start, навигация, меню
+│   ├── worker.py          # Записи работ, мои записи, баланс
+│   ├── admin.py           # Категории, работы, работники, записи
+│   ├── money.py           # Авансы, штрафы, баланс, рейтинг
+│   ├── report_handlers.py # Сводки, Excel отчёты
+│   ├── reminders.py       # Настройка напоминаний
+│   └── filters.py         # AdminFilter, StaffFilter
+├── keyboards/
+│   ├── __init__.py
+│   ├── reply.py           # ReplyKeyboard меню
+│   └── inline.py          # InlineKeyboard кнопки
+├── states/
+│   ├── __init__.py
+│   └── states.py          # Все FSM состояния
+├── utils/
+│   ├── __init__.py
+│   ├── formatters.py      # format_date, MONTHS_RU
+│   └── helpers.py         # send_long_message
+├── middlewares/
+│   ├── __init__.py
+│   └── role.py            # RoleMiddleware (is_admin, is_manager)
+└── requirements.txt
+👥 Роли пользователей
+Роль	Доступ
+ADMIN_ID	Полный доступ ко всему
+MANAGER_IDS	Отчёты, деньги (авансы/штрафы), сводки
+Работники	Записи работ, свой баланс, свои записи
+🗄 Структура базы данных
+SQL
 
-Роли:
-- ADMIN_ID — полный доступ
-- MANAGER_IDS — отчёты и деньги
-- Остальные — работники
+-- Категории работ
+categories (code, name, emoji)
 
-БД на Railway Volume:
-- Path: /data
-- Файл: production.db
+-- Работники
+workers (telegram_id, name, registered_at)
 
+-- Прайс-лист
+price_list (code, name, price, price_type, category_code, is_active)
+-- price_type: 'unit' (за штуку) или 'square' (за м²)
 
+-- Связь работник-категория
+worker_categories (worker_id, category_code)
 
-У меня Telegram бот для учёта работ на производстве.
-Стек: Python, aiogram 3, Railway. PostgreSQL 
-Вот ссылка на GitHub: https://github.com/yaMovsar/cabinet-bot
+-- Записи о работе
+work_log (id, worker_id, work_code, quantity, price_per_unit, total, work_date, created_at)
 
-[вставь нужные файлы]
+-- Авансы
+advances (id, worker_id, amount, comment, advance_date, created_at)
 
-Проблема: ...
+-- Штрафы
+penalties (id, worker_id, amount, reason, penalty_date, created_at)
+
+-- Настройки напоминаний
+reminder_settings (id, evening_hour, evening_minute, late_hour, late_minute, 
+                   report_hour, report_minute, evening_enabled, late_enabled, report_enabled)
+🔧 Основные функции
+Работник:
+📝 Записать работу (выбор даты → категория → работа → количество)
+📁 Мои записи (просмотр, редактирование, удаление)
+💳 Мой баланс
+💰 За сегодня / 📊 За месяц
+💬 Написать вопрос админу
+Админ:
+➕ Добавить (категорию, вид работы, работника)
+✏️ Редактировать (категорию, работу, расценку, имя работника)
+🗑 Удалить (категорию, работу, работника)
+🔗 Назначить/убрать категории работнику
+🔧 Записи работников (просмотр, редактирование, удаление)
+💾 Бэкап БД (JSON)
+⏰ Напоминания (настройка времени)
+Менеджер + Админ:
+📁 Сводка день / месяц (с выбором работника)
+📥 Отчёт месяц / работник (Excel)
+💳 Выдать/удалить аванс
+⚠️ Выписать/удалить штраф
+💰 Баланс работников
+📊 Заработок за месяц
+🏆 Рейтинг работников
+💼 Итоги месяца
+📝 FSM Состояния (states/states.py)
+Python
+
+# Работник
+WorkEntry, ViewEntries, WorkerDeleteEntry, WorkerEditEntry
+
+# Админ: добавление
+AdminAddCategory, AdminAddWork, AdminAddWorker
+
+# Админ: редактирование
+AdminAssignCategory, AdminRemoveCategory, AdminEditPrice, 
+AdminRenameWorker, AdminManageEntries, AdminEditCategory, AdminEditWork
+
+# Админ: удаление
+AdminDeleteCategory, AdminDeleteWork, AdminDeleteWorker
+
+# Деньги
+AdminAdvance, AdminDeleteAdvance, AdminPenalty, AdminDeletePenalty
+
+# Отчёты
+ReportWorker, MonthlySummaryWorker
+
+# Напоминания
+AdminReminderSettings
+🚀 Команды деплоя
+Bash
+
+cd C:\Users\user\Desktop\cabinet-bot
+git add .
+git commit -m "описание изменений"
+git push origin main
+Railway автоматически деплоит после push в main.
+
+📌 Важные особенности
+price_type — работы могут быть "за штуку" (unit) или "за м²" (square)
+Бэкапы — автоматически каждые 5 часов + в 23:00 + вручную
+Импорт JSON — админ может отправить .json файл для восстановления БД
+Напоминания — вечернее, позднее, отчёт админу (настраиваемое время)
+Уведомления — админ и менеджеры получают уведомления о новых записях
+💬 Как обращаться к ИИ
+При обращении скопируй этот конфиг и добавь:
+
+text
+
+Вот мой бот: [этот конфиг]
+
+Проблема/задача: [описание]
+
+Нужные файлы:
+[вставь содержимое нужных файлов через команду type]
+Команды для просмотра файлов:
+Bash
+
+type bot.py
+type database.py
+type handlers\worker.py
+type handlers\admin.py
+type handlers\money.py
+type handlers\common.py
+type handlers\report_handlers.py
+type handlers\reminders.py
+type handlers\filters.py
+type keyboards\reply.py
+type keyboards\inline.py
+type states\states.py
+type utils\formatters.py
+type utils\helpers.py
+type middlewares\role.py
