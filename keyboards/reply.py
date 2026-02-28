@@ -1,4 +1,4 @@
-from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
+﻿from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 from config import ADMIN_ID, MANAGER_IDS
 
 
@@ -27,10 +27,11 @@ def get_admin_keyboard():
         [KeyboardButton(text="➕ Добавить"),
          KeyboardButton(text="✏️ Редактировать")],
         [KeyboardButton(text="🗑 Удалить"),
-         KeyboardButton(text="📋 Справочники")],
+         KeyboardButton(text="📂 Справочники")],
         [KeyboardButton(text="💰 Деньги"),
-         KeyboardButton(text="💾 Бэкап БД")],
-        [KeyboardButton(text="⏰ Напоминания")],
+         KeyboardButton(text="🔧 Записи работников")],
+        [KeyboardButton(text="💾 Бэкап БД"),
+         KeyboardButton(text="⏰ Напоминания")],
         [KeyboardButton(text="🔙 Назад")],
     ]
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
@@ -42,7 +43,7 @@ def get_manager_keyboard():
          KeyboardButton(text="📁 Сводка месяц")],
         [KeyboardButton(text="📥 Отчёт месяц"),
          KeyboardButton(text="📥 Отчёт работник")],
-        [KeyboardButton(text="📋 Справочники")],
+        [KeyboardButton(text="📂 Справочники")],
         [KeyboardButton(text="💰 Деньги")],
         [KeyboardButton(text="🔙 Назад")],
     ]
