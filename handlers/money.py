@@ -40,8 +40,7 @@ async def advance_start(message: types.Message, state: FSMContext):
             callback_data=f"adv_w:{tid}"
         )])
     buttons.append([InlineKeyboardButton(text="❌ Отмена", callback_data="cdel")])
-    await message.answer("👤 Кому выдать аванс?",
-                         reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+    await message.answer("👤 Кому выдать аванс?", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
     await state.set_state(AdminAdvance.choosing_worker)
 
 
@@ -72,10 +71,10 @@ async def advance_amount(message: types.Message, state: FSMContext):
         if amount <= 0:
             raise ValueError
     except ValueError:
-        await message.answer("❌ Введите положительное число!")
+        await message.answer("❌ Положительное число!")
         return
     await state.update_data(amount=amount)
-    await message.answer(f"💳 Сумма: {int(amount)} руб\n\nВведите комментарий (или - чтобы пропустить):")
+    await message.answer(f"💳 Сумма: {int(amount)} руб\n\nКомментарий (или - чтобы пропустить):")
     await state.set_state(AdminAdvance.entering_comment)
 
 
@@ -115,17 +114,15 @@ async def advance_comment(message: types.Message, state: FSMContext):
 
     if message.from_user.id != ADMIN_ID:
         try:
-            admin_notify = (
+            await bot.send_message(
+                ADMIN_ID,
                 f"📬 Менеджер выдал аванс!\n\n"
                 f"👤 Менеджер: {message.from_user.full_name}\n"
                 f"👤 Работник: {data['worker_name']}\n"
                 f"💳 Сумма: {int(data['amount'])} руб"
             )
-            if comment:
-                admin_notify += f"\n💬 {comment}"
-            await bot.send_message(ADMIN_ID, admin_notify)
         except Exception as e:
-            logging.error(f"Notify admin about advance: {e}")
+            logging.error(f"Notify admin advance: {e}")
 
     await state.clear()
 
@@ -148,8 +145,7 @@ async def delete_advance_start(message: types.Message, state: FSMContext):
         await message.answer("📭 Нет авансов за этот месяц.")
         return
     buttons.append([InlineKeyboardButton(text="❌ Отмена", callback_data="cdel")])
-    await message.answer("👤 Выберите работника:",
-                         reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+    await message.answer("👤 Выберите работника:", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
     await state.set_state(AdminDeleteAdvance.choosing_worker)
 
 
@@ -223,8 +219,7 @@ async def penalty_start(message: types.Message, state: FSMContext):
             callback_data=f"pen_w:{tid}"
         )])
     buttons.append([InlineKeyboardButton(text="❌ Отмена", callback_data="cdel")])
-    await message.answer("👤 Кому выписать штраф?",
-                         reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+    await message.answer("👤 Кому выписать штраф?", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
     await state.set_state(AdminPenalty.choosing_worker)
 
 
@@ -255,10 +250,10 @@ async def penalty_amount(message: types.Message, state: FSMContext):
         if amount <= 0:
             raise ValueError
     except ValueError:
-        await message.answer("❌ Введите положительное число!")
+        await message.answer("❌ Положительное число!")
         return
     await state.update_data(amount=amount)
-    await message.answer(f"⚠️ Сумма: {int(amount)} руб\n\nВведите причину штрафа (или - чтобы пропустить):")
+    await message.answer(f"⚠️ Сумма: {int(amount)} руб\n\nПричина (или - чтобы пропустить):")
     await state.set_state(AdminPenalty.entering_reason)
 
 
@@ -298,17 +293,15 @@ async def penalty_reason(message: types.Message, state: FSMContext):
 
     if message.from_user.id != ADMIN_ID:
         try:
-            admin_notify = (
+            await bot.send_message(
+                ADMIN_ID,
                 f"📬 Менеджер выписал штраф!\n\n"
                 f"👤 Менеджер: {message.from_user.full_name}\n"
                 f"👤 Работник: {data['worker_name']}\n"
                 f"⚠️ Сумма: {int(data['amount'])} руб"
             )
-            if reason:
-                admin_notify += f"\n📝 Причина: {reason}"
-            await bot.send_message(ADMIN_ID, admin_notify)
         except Exception as e:
-            logging.error(f"Notify admin about penalty: {e}")
+            logging.error(f"Notify admin penalty: {e}")
 
     await state.clear()
 
@@ -331,8 +324,7 @@ async def delete_penalty_start(message: types.Message, state: FSMContext):
         await message.answer("📭 Нет штрафов за этот месяц.")
         return
     buttons.append([InlineKeyboardButton(text="❌ Отмена", callback_data="cdel")])
-    await message.answer("👤 Выберите работника:",
-                         reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+    await message.answer("👤 Выберите работника:", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
     await state.set_state(AdminDeletePenalty.choosing_worker)
 
 
@@ -395,11 +387,8 @@ async def show_balances(message: types.Message, state: FSMContext):
     await state.clear()
     today = date.today()
     balances = await get_all_workers_balance(today.year, today.month)
-
     text = f"💰 Баланс — {MONTHS_RU[today.month]} {today.year}\n\n"
-    grand_earned = 0
-    grand_advance = 0
-    grand_penalty = 0
+    grand_earned = grand_advance = grand_penalty = 0
     for tid, name, earned, advances, penalties, work_days in balances:
         balance = earned - advances - penalties
         if earned > 0 or advances > 0 or penalties > 0:
@@ -429,34 +418,28 @@ async def earnings_month(message: types.Message, state: FSMContext):
     await state.clear()
     today = date.today()
     workers = await get_all_workers()
-
     text = f"📊 Заработок — {MONTHS_RU[today.month]} {today.year}\n\n"
     grand_total = 0
-
     for tid, name in workers:
         monthly = await get_monthly_total(tid, today.year, today.month)
         earned = sum(r[3] for r in monthly)
         cats = await get_worker_categories(tid)
         ce = "".join([c[2] for c in cats]) if cats else ""
-
         if earned > 0:
             details = await get_worker_monthly_details(tid, today.year, today.month)
             text += f"👤 {name} {ce}\n"
             current_cat = ""
-            # ✅ ИСПРАВЛЕНО: добавлен price_type в распаковку
             for pl_name, c_emoji, c_name, qty, price, total, price_type in details:
                 if c_name != current_cat:
                     current_cat = c_name
                     text += f"   {c_emoji} {c_name}:\n"
-                # ✅ УЛУЧШЕНО: показываем единицы измерения
                 unit_label = "м²" if price_type == "square" else "шт"
                 qty_display = f"{qty:.2f}" if price_type == "square" else str(int(qty))
-                text += f"      ▫️ {pl_name}: {qty_display} {unit_label} x {int(price)} руб = {int(total)} руб\n"
+                text += f"      ▪️ {pl_name}: {qty_display} {unit_label} x {int(price)} руб = {int(total)} руб\n"
             text += f"   💰 Итого: {int(earned)} руб\n\n"
         else:
             text += f"❌ {name} {ce} — нет записей\n\n"
         grand_total += earned
-
     text += f"━━━━━━━━━━━━━━━━━━━\n"
     text += f"💰 ОБЩИЙ ФОНД: {int(grand_total)} руб"
     await send_long_message(message, text)
@@ -469,24 +452,19 @@ async def workers_rating(message: types.Message, state: FSMContext):
     await state.clear()
     today = date.today()
     balances = await get_all_workers_balance(today.year, today.month)
-
     worker_stats = []
     no_records = []
-
     for tid, name, earned, advances, penalties, work_days in balances:
         if earned > 0:
             avg_per_day = earned / work_days if work_days > 0 else 0
             worker_stats.append((tid, name, earned, work_days, avg_per_day, advances, penalties))
         else:
             no_records.append((tid, name))
-
     if not worker_stats and not no_records:
         await message.answer("📭 Нет данных за этот месяц.")
         return
-
     medals = ["🥇", "🥈", "🥉"]
     text = f"🏆 Рейтинг — {MONTHS_RU[today.month]} {today.year}\n\n"
-
     if worker_stats:
         worker_stats.sort(key=lambda x: x[2], reverse=True)
         text += f"📊 По заработку:\n\n"
@@ -497,24 +475,13 @@ async def workers_rating(message: types.Message, state: FSMContext):
                 f"{medal} {name}\n"
                 f"   💰 Заработок: {int(earned)} руб\n"
                 f"   📅 Дней: {days}\n"
-                f"   📊 Среднее/день: {int(avg)} руб\n"
-                f"   💳 Авансы: {int(adv)} руб\n"
+                f"   📈 Среднее/день: {int(avg)} руб\n"
+                f"   📊 Остаток: {int(balance)} руб\n\n"
             )
-            if pen > 0:
-                text += f"   ⚠️ Штрафы: {int(pen)} руб\n"
-            text += f"   📊 Остаток: {int(balance)} руб\n\n"
-
-        worker_stats.sort(key=lambda x: x[4], reverse=True)
-        text += f"\n📊 По среднему за день:\n\n"
-        for i, (tid, name, earned, days, avg, adv, pen) in enumerate(worker_stats):
-            medal = medals[i] if i < 3 else f"  {i+1}."
-            text += f"{medal} {name} — {int(avg)} руб/день ({days} дн.)\n"
-
     if no_records:
-        text += f"\n\n❌ Без записей:\n"
+        text += f"\n❌ Без записей:\n"
         for tid, name in no_records:
-            text += f"   ▫️ {name}\n"
-
+            text += f"   ▪️ {name}\n"
     await send_long_message(message, text)
 
 
@@ -525,16 +492,10 @@ async def month_salary_summary(message: types.Message, state: FSMContext):
     await state.clear()
     today = date.today()
     balances = await get_all_workers_balance(today.year, today.month)
-
     text = f"💼 ИТОГИ МЕСЯЦА — {MONTHS_RU[today.month]} {today.year}\n"
     text += f"━━━━━━━━━━━━━━━━━━━\n\n"
-
-    grand_earned = 0
-    grand_advance = 0
-    grand_penalty = 0
-    grand_to_pay = 0
+    grand_earned = grand_advance = grand_penalty = grand_to_pay = 0
     worker_list = []
-
     for tid, name, earned, advances, penalties, work_days in balances:
         to_pay = earned - advances - penalties
         if earned > 0 or advances > 0 or penalties > 0:
@@ -547,42 +508,24 @@ async def month_salary_summary(message: types.Message, state: FSMContext):
             grand_advance += advances
             grand_penalty += penalties
             grand_to_pay += to_pay
-
     if not worker_list:
         await message.answer("📭 Нет данных за этот месяц.")
         return
-
     worker_list.sort(key=lambda x: x['earned'], reverse=True)
-
     for w in worker_list:
-        if w['to_pay'] > 0:
-            icon = "💰"
-        elif w['to_pay'] == 0:
-            icon = "✅"
-        else:
-            icon = "⚠️"
+        icon = "💰" if w['to_pay'] > 0 else ("✅" if w['to_pay'] == 0 else "⚠️")
         text += f"{icon} {w['name']}\n"
-        text += f"   📅 Рабочих дней: {w['days']}\n"
+        text += f"   📅 Дней: {w['days']}\n"
         text += f"   💰 Заработано: {int(w['earned'])} руб\n"
         text += f"   💳 Авансы: {int(w['advance'])} руб\n"
         if w['penalty'] > 0:
             text += f"   ⚠️ Штрафы: {int(w['penalty'])} руб\n"
         text += f"   📊 К выплате: {int(w['to_pay'])} руб\n\n"
-
     text += f"━━━━━━━━━━━━━━━━━━━\n"
     text += f"👥 Работников: {len(worker_list)}\n"
-    text += f"💰 Общий фонд зарплат: {int(grand_earned)} руб\n"
+    text += f"💰 Фонд зарплат: {int(grand_earned)} руб\n"
     text += f"💳 Выдано авансами: {int(grand_advance)} руб\n"
     if grand_penalty > 0:
         text += f"⚠️ Штрафы: {int(grand_penalty)} руб\n"
     text += f"💼 Осталось выплатить: {int(grand_to_pay)} руб\n"
-    text += f"━━━━━━━━━━━━━━━━━━━\n\n"
-
-    if grand_to_pay > 0:
-        text += f"💡 Нужно подготовить {int(grand_to_pay)} руб для выдачи зарплат"
-    elif grand_to_pay == 0:
-        text += f"✅ Все зарплаты выплачены!"
-    else:
-        text += f"⚠️ Переплата на {int(abs(grand_to_pay))} руб"
-
     await send_long_message(message, text)

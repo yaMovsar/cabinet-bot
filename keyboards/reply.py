@@ -5,14 +5,14 @@ from config import ADMIN_ID, MANAGER_IDS
 def get_main_keyboard(user_id=None):
     buttons = [
         [KeyboardButton(text="📝 Записать работу"),
-         KeyboardButton(text="📋 Мои записи")],
+         KeyboardButton(text="📁 Мои записи")],
         [KeyboardButton(text="💰 За сегодня"),
          KeyboardButton(text="📊 За месяц")],
         [KeyboardButton(text="💳 Мой баланс"),
-         KeyboardButton(text="💬 Написать вопрос")]  # ← ДОБАВЬ СЮДА
+         KeyboardButton(text="💬 Написать вопрос")]
     ]
     if user_id and user_id == ADMIN_ID:
-        buttons.append([KeyboardButton(text="👑 Админ-панель")])
+        buttons.append([KeyboardButton(text="🖥 Админ-панель")])
     elif user_id and user_id in MANAGER_IDS:
         buttons.append([KeyboardButton(text="💼 Кабинет Эльмурзы")])
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
@@ -20,14 +20,14 @@ def get_main_keyboard(user_id=None):
 
 def get_admin_keyboard():
     buttons = [
-        [KeyboardButton(text="📋 Сводка день"),
-         KeyboardButton(text="📋 Сводка месяц")],
+        [KeyboardButton(text="📁 Сводка день"),
+         KeyboardButton(text="📁 Сводка месяц")],
         [KeyboardButton(text="📥 Отчёт месяц"),
          KeyboardButton(text="📥 Отчёт работник")],
         [KeyboardButton(text="➕ Добавить"),
          KeyboardButton(text="✏️ Редактировать")],
         [KeyboardButton(text="🗑 Удалить"),
-         KeyboardButton(text="📂 Справочники")],
+         KeyboardButton(text="📋 Справочники")],
         [KeyboardButton(text="💰 Деньги"),
          KeyboardButton(text="💾 Бэкап БД")],
         [KeyboardButton(text="⏰ Напоминания")],
@@ -38,11 +38,11 @@ def get_admin_keyboard():
 
 def get_manager_keyboard():
     buttons = [
-        [KeyboardButton(text="📋 Сводка день"),
-         KeyboardButton(text="📋 Сводка месяц")],
+        [KeyboardButton(text="📁 Сводка день"),
+         KeyboardButton(text="📁 Сводка месяц")],
         [KeyboardButton(text="📥 Отчёт месяц"),
          KeyboardButton(text="📥 Отчёт работник")],
-        [KeyboardButton(text="📂 Справочники")],
+        [KeyboardButton(text="📋 Справочники")],
         [KeyboardButton(text="💰 Деньги")],
         [KeyboardButton(text="🔙 Назад")],
     ]
@@ -69,6 +69,7 @@ def get_edit_keyboard():
          KeyboardButton(text="🔓 Убрать кат.")],
         [KeyboardButton(text="🔙 В админ-панель")]
     ], resize_keyboard=True)
+
 
 def get_delete_keyboard():
     buttons = [
