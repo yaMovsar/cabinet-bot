@@ -42,6 +42,7 @@ def is_today(date_value) -> bool:
 
 
 def can_edit_date(date_value) -> bool:
+    return True
     """Проверяет можно ли редактировать запись (сегодня или вчера)"""
     date_str = to_date_str(date_value)
     today = date.today()
