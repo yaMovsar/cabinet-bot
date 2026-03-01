@@ -347,7 +347,7 @@ async def save_work_entry(message, state, qty, user=None):
         reply_markup=buttons
     )
 
-    if user.id != ADMIN_ID:
+        if user.id != ADMIN_ID:
         notify_text = (
             f"📬 Новая запись!\n\n"
             f"👤 {user.full_name}\n"
@@ -359,11 +359,7 @@ async def save_work_entry(message, state, qty, user=None):
             await bot.send_message(ADMIN_ID, notify_text)
         except Exception as e:
             logging.error(f"Notify admin: {e}")
-        for mgr_id in MANAGER_IDS:
-            try:
-                await bot.send_message(mgr_id, notify_text)
-            except Exception as e:
-                logging.error(f"Notify manager {mgr_id}: {e}")
+        # Уведомления менеджерам отключены
 
     await state.clear()
 
