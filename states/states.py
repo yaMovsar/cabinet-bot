@@ -150,6 +150,8 @@ class ReportWorker(StatesGroup):
 class MonthlySummaryWorker(StatesGroup):
     choosing_worker = State()
 
+class MonthlyTotals(StatesGroup):
+    select_month = State()
 
 # ==================== НАПОМИНАНИЯ ====================
 

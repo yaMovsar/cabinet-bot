@@ -487,15 +487,66 @@ async def workers_rating(message: types.Message, state: FSMContext):
 
 # ==================== ИТОГИ МЕСЯЦА ====================
 
+from states import MonthlyTotals
+
+
+def get_month_selection_kb():
+    """Клавиатура выбора месяца (текущий и прошлый)"""
+    from datetime import datetime
+    now = datetime.now()
+    current_month = now.month
+    current_year = now.year
+    
+    # Прошлый месяц
+    if current_month == 1:
+        prev_month = 12
+        prev_year = current_year - 1
+    else:
+        prev_month = current_month - 1
+        prev_year = current_year
+    
+    buttons = [
+        [InlineKeyboardButton(
+            text=f"📅 {MONTHS_RU[current_month]} {current_year} (текущий)",
+            callback_data=f"totals_month:{current_year}:{current_month}"
+        )],
+        [InlineKeyboardButton(
+            text=f"📅 {MONTHS_RU[prev_month]} {prev_year} (прошлый)",
+            callback_data=f"totals_month:{prev_year}:{prev_month}"
+        )],
+        [InlineKeyboardButton(text="❌ Отмена", callback_data="cdel")]
+    ]
+    
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
 @router.message(F.text == "💼 Итоги месяца", StaffFilter())
-async def month_salary_summary(message: types.Message, state: FSMContext):
+async def month_salary_select(message: types.Message, state: FSMContext):
+    """Выбор месяца для итогов"""
     await state.clear()
-    today = date.today()
-    balances = await get_all_workers_balance(today.year, today.month)
-    text = f"💼 ИТОГИ МЕСЯЦА — {MONTHS_RU[today.month]} {today.year}\n"
+    await message.answer(
+        "📅 Выберите месяц для расчёта зарплаты:",
+        reply_markup=get_month_selection_kb()
+    )
+    await state.set_state(MonthlyTotals.select_month)
+
+
+@router.callback_query(F.data.startswith("totals_month:"), MonthlyTotals.select_month)
+async def month_salary_summary(callback: types.CallbackQuery, state: FSMContext):
+    """Показ итогов за выбранный месяц"""
+    _, year, month = callback.data.split(":")
+    year, month = int(year), int(month)
+    
+    await callback.message.edit_text("⏳ Формирую итоги...")
+    
+    balances = await get_all_workers_balance(year, month)
+    
+    text = f"💼 ИТОГИ МЕСЯЦА — {MONTHS_RU[month]} {year}\n"
     text += f"━━━━━━━━━━━━━━━━━━━\n\n"
+    
     grand_earned = grand_advance = grand_penalty = grand_to_pay = 0
     worker_list = []
+    
     for tid, name, earned, advances, penalties, work_days in balances:
         to_pay = earned - advances - penalties
         if earned > 0 or advances > 0 or penalties > 0:
@@ -508,10 +559,14 @@ async def month_salary_summary(message: types.Message, state: FSMContext):
             grand_advance += advances
             grand_penalty += penalties
             grand_to_pay += to_pay
+    
     if not worker_list:
-        await message.answer("📭 Нет данных за этот месяц.")
+        await callback.message.edit_text(f"📭 Нет данных за {MONTHS_RU[month]} {year}.")
+        await state.clear()
         return
+    
     worker_list.sort(key=lambda x: x['earned'], reverse=True)
+    
     for w in worker_list:
         icon = "💰" if w['to_pay'] > 0 else ("✅" if w['to_pay'] == 0 else "⚠️")
         text += f"{icon} {w['name']}\n"
@@ -521,6 +576,7 @@ async def month_salary_summary(message: types.Message, state: FSMContext):
         if w['penalty'] > 0:
             text += f"   ⚠️ Штрафы: {int(w['penalty'])} руб\n"
         text += f"   📊 К выплате: {int(w['to_pay'])} руб\n\n"
+    
     text += f"━━━━━━━━━━━━━━━━━━━\n"
     text += f"👥 Работников: {len(worker_list)}\n"
     text += f"💰 Фонд зарплат: {int(grand_earned)} руб\n"
@@ -528,4 +584,9 @@ async def month_salary_summary(message: types.Message, state: FSMContext):
     if grand_penalty > 0:
         text += f"⚠️ Штрафы: {int(grand_penalty)} руб\n"
     text += f"💼 Осталось выплатить: {int(grand_to_pay)} руб\n"
-    await send_long_message(message, text)
+    
+    # Используем send_long_message для длинных текстов
+    await callback.message.delete()
+    await send_long_message(callback.message, text)
+    await state.clear()
+    await callback.answer()
