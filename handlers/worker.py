@@ -424,7 +424,8 @@ async def my_entries_start(message: types.Message, state: FSMContext):
     
     await message.answer(
         "📁 <b>Мои записи</b>\n\nВыберите месяц:",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons),
+        parse_mode="HTML"  # ← ДОБАВИТЬ
     )
     await state.set_state(ViewEntries.choosing_month)
 
@@ -454,12 +455,14 @@ async def my_entries_month_chosen(callback: types.CallbackQuery, state: FSMConte
     buttons = []
     current_date = ""
     total_month = 0
-    
+    parse_mode="HTML"
+
     for eid, name, qty, price, total, wdate, created, worker_name, price_type in entries:
         if wdate != current_date:
             text += f"\n📅 <b>{format_date(wdate)}</b>:\n"
             current_date = wdate
-        
+            parse_mode="HTML"
+
         unit = "м²" if price_type == "square" else "шт"
         qty_display = f"{qty:.2f}" if price_type == "square" else str(int(qty))
         text += f"   • {name} × {qty_display} = {int(total)} ₽\n"
