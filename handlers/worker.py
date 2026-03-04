@@ -13,7 +13,7 @@ from database import (
     get_worker_entries_by_custom_date, get_entry_by_id,
     delete_entry_by_id, update_entry_quantity,
     get_worker_full_stats, get_worker_advances, get_worker_penalties,
-    get_worker_entries_by_month  # ← ДОБАВЛЕНО
+    get_worker_entries_by_month
 )
 from states import WorkEntry, ViewEntries, WorkerDeleteEntry, WorkerEditEntry
 from keyboards import make_date_picker, make_work_buttons
@@ -44,11 +44,6 @@ def is_today(date_value) -> bool:
 
 def can_edit_date(date_value) -> bool:
     return True
-    """Проверяет можно ли редактировать запись (сегодня или вчера)"""
-    date_str = to_date_str(date_value)
-    today = date.today()
-    yesterday = today - timedelta(days=1)
-    return date_str in (today.isoformat(), yesterday.isoformat())
 
 
 # ==================== ЗАПИСАТЬ РАБОТУ ====================
@@ -402,7 +397,6 @@ async def my_entries_start(message: types.Message, state: FSMContext):
     current_year = today.year
     current_month = today.month
     
-    # Прошлый месяц
     if current_month == 1:
         prev_month = 12
         prev_year = current_year - 1
@@ -425,7 +419,7 @@ async def my_entries_start(message: types.Message, state: FSMContext):
     await message.answer(
         "📁 <b>Мои записи</b>\n\nВыберите месяц:",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons),
-        parse_mode="HTML"  # ← ДОБАВИТЬ
+        parse_mode="HTML"
     )
     await state.set_state(ViewEntries.choosing_month)
 
@@ -450,18 +444,15 @@ async def my_entries_month_chosen(callback: types.CallbackQuery, state: FSMConte
     
     await state.update_data(year=year, month=month)
     
-    # Группируем по датам
     text = f"📁 <b>Записи за {MONTHS_RU[month]} {year}</b>\n\n"
     buttons = []
     current_date = ""
     total_month = 0
-    parse_mode="HTML"
 
     for eid, name, qty, price, total, wdate, created, worker_name, price_type in entries:
         if wdate != current_date:
             text += f"\n📅 <b>{format_date(wdate)}</b>:\n"
             current_date = wdate
-            parse_mode="HTML"
 
         unit = "м²" if price_type == "square" else "шт"
         qty_display = f"{qty:.2f}" if price_type == "square" else str(int(qty))
@@ -477,13 +468,13 @@ async def my_entries_month_chosen(callback: types.CallbackQuery, state: FSMConte
     
     buttons.append([InlineKeyboardButton(text="🔙 Назад", callback_data="entries_back")])
     
-    # Разбиваем на части если слишком длинное
     if len(text) > 4000:
         text = text[:4000] + "..."
     
     await callback.message.edit_text(
         text,
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons[:20])  # Лимит кнопок
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons[:20]),
+        parse_mode="HTML"
     )
     await state.set_state(ViewEntries.viewing)
     await callback.answer()
@@ -501,7 +492,6 @@ async def view_entry_details(callback: types.CallbackQuery, state: FSMContext):
     
     await state.update_data(entry_id=entry_id)
     
-    # entry: (id, name, qty, price, total, date, worker_id, worker_name, price_type)
     price_type = entry[8] if len(entry) > 8 else "unit"
     unit = "м²" if price_type == "square" else "шт"
     qty_display = f"{entry[2]:.2f}" if price_type == "square" else str(int(entry[2]))
@@ -518,7 +508,11 @@ async def view_entry_details(callback: types.CallbackQuery, state: FSMContext):
         [InlineKeyboardButton(text="🔙 Назад", callback_data="entry_back")]
     ]
     
-    await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+    await callback.message.edit_text(
+        text,
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons),
+        parse_mode="HTML"
+    )
     await callback.answer()
 
 
@@ -526,7 +520,7 @@ async def view_entry_details(callback: types.CallbackQuery, state: FSMContext):
 async def entry_edit_start(callback: types.CallbackQuery, state: FSMContext):
     """Начало редактирования количества"""
     await callback.message.edit_text("✏️ Введите новое количество:")
-    await state.set_state(WorkerEditEntry.entering_new_quantity)  # ← исправить
+    await state.set_state(WorkerEditEntry.entering_new_quantity)
     await callback.answer()
 
 
@@ -574,7 +568,7 @@ async def entry_delete_cancel(callback: types.CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
-@router.message(WorkerEditEntry.entering_new_quantity)  # ← исправить
+@router.message(WorkerEditEntry.entering_new_quantity)
 async def entry_edit_quantity(message: types.Message, state: FSMContext):
     """Обработка нового количества"""
     try:
@@ -618,7 +612,6 @@ async def entry_back_to_list(callback: types.CallbackQuery, state: FSMContext):
     year = data.get("year", date.today().year)
     month = data.get("month", date.today().month)
     
-    # Эмулируем выбор месяца заново
     callback.data = f"entries_month:{year}:{month}"
     await state.set_state(ViewEntries.choosing_month)
     await my_entries_month_chosen(callback, state)
@@ -652,7 +645,8 @@ async def entries_back_to_months(callback: types.CallbackQuery, state: FSMContex
     
     await callback.message.edit_text(
         "📁 <b>Мои записи</b>\n\nВыберите месяц:",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons),
+        parse_mode="HTML"
     )
     await state.set_state(ViewEntries.choosing_month)
     await callback.answer()
