@@ -953,3 +953,19 @@ async def update_reminder_settings(**kwargs):
         vals.append(1)
         await conn.execute(
             f"UPDATE reminder_settings SET {sets} WHERE id = ${len(vals)}", *vals)
+
+async def get_worker_entries_by_month(worker_id: int, year: int, month: int):
+    """Получает записи работника за конкретный месяц"""
+    async with pool.acquire() as conn:
+        rows = await conn.fetch("""
+            SELECT wl.id, pl.name, wl.quantity, wl.price_per_unit, wl.total,
+                   wl.work_date::TEXT, wl.created_at::TEXT, w.name, pl.price_type
+            FROM work_log wl
+            JOIN price_list pl ON wl.work_code = pl.code
+            JOIN workers w ON wl.worker_id = w.telegram_id
+            WHERE wl.worker_id = $1
+              AND EXTRACT(YEAR FROM wl.work_date) = $2
+              AND EXTRACT(MONTH FROM wl.work_date) = $3
+            ORDER BY wl.work_date DESC, wl.created_at DESC
+        """, worker_id, year, month)
+        return [tuple(row) for row in rows]

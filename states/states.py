@@ -13,8 +13,9 @@ class WorkEntry(StatesGroup):
 
 
 class ViewEntries(StatesGroup):
+    choosing_month = State()      # НОВОЕ: выбор месяца
     choosing_date = State()
-    entering_custom_date = State()
+    viewing = State()
 
 
 class WorkerDeleteEntry(StatesGroup):
@@ -75,6 +76,7 @@ class AdminRenameWorker(StatesGroup):
 
 class AdminManageEntries(StatesGroup):
     choosing_worker = State()
+    choosing_month = State()      # ← Добавьте это
     viewing_entries = State()
     choosing_action = State()
     entering_new_quantity = State()

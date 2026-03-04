@@ -12,7 +12,8 @@ from database import (
     get_monthly_by_days, get_price_list,
     get_worker_entries_by_custom_date, get_entry_by_id,
     delete_entry_by_id, update_entry_quantity,
-    get_worker_full_stats, get_worker_advances, get_worker_penalties
+    get_worker_full_stats, get_worker_advances, get_worker_penalties,
+    get_worker_entries_by_month  # ← ДОБАВЛЕНО
 )
 from states import WorkEntry, ViewEntries, WorkerDeleteEntry, WorkerEditEntry
 from keyboards import make_date_picker, make_work_buttons
@@ -390,287 +391,275 @@ async def back_to_menu(callback: types.CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
-# ==================== МОИ ЗАПИСИ (с редактированием и удалением) ====================
+# ==================== МОИ ЗАПИСИ ====================
 
 @router.message(F.text == "📁 Мои записи")
-async def my_entries(message: types.Message, state: FSMContext):
+async def my_entries_start(message: types.Message, state: FSMContext):
+    """Выбор месяца для просмотра записей"""
     await state.clear()
+    
+    today = date.today()
+    current_year = today.year
+    current_month = today.month
+    
+    # Прошлый месяц
+    if current_month == 1:
+        prev_month = 12
+        prev_year = current_year - 1
+    else:
+        prev_month = current_month - 1
+        prev_year = current_year
+    
+    buttons = [
+        [InlineKeyboardButton(
+            text=f"📅 {MONTHS_RU[current_month]} {current_year}",
+            callback_data=f"entries_month:{current_year}:{current_month}"
+        )],
+        [InlineKeyboardButton(
+            text=f"📅 {MONTHS_RU[prev_month]} {prev_year}",
+            callback_data=f"entries_month:{prev_year}:{prev_month}"
+        )],
+        [InlineKeyboardButton(text="❌ Отмена", callback_data="entries_cancel")]
+    ]
+    
     await message.answer(
-        "📁 За какой день показать записи?",
-        reply_markup=make_date_picker("viewdate", "myback")
+        "📁 <b>Мои записи</b>\n\nВыберите месяц:",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
     )
-    await state.set_state(ViewEntries.choosing_date)
+    await state.set_state(ViewEntries.choosing_month)
 
 
-@router.callback_query(F.data.startswith("viewdate:"), ViewEntries.choosing_date)
-async def view_date_chosen(callback: types.CallbackQuery, state: FSMContext):
-    value = callback.data.split(":", 1)[1]
-    if value == "custom":
+@router.callback_query(F.data.startswith("entries_month:"), ViewEntries.choosing_month)
+async def my_entries_month_chosen(callback: types.CallbackQuery, state: FSMContext):
+    """Показывает записи за выбранный месяц"""
+    parts = callback.data.split(":")
+    year = int(parts[1])
+    month = int(parts[2])
+    
+    worker_id = callback.from_user.id
+    entries = await get_worker_entries_by_month(worker_id, year, month)
+    
+    if not entries:
         await callback.message.edit_text(
-            "📅 Введите дату в формате ДД.ММ.ГГГГ\n\nНапример: 25.05.2025"
+            f"📭 У вас нет записей за {MONTHS_RU[month]} {year}"
         )
-        await state.set_state(ViewEntries.entering_custom_date)
+        await state.clear()
         await callback.answer()
         return
-    await show_entries_for_date(callback.message, state,
-                                callback.from_user.id, value, edit=True)
-    await callback.answer()
-
-
-@router.message(ViewEntries.entering_custom_date)
-async def view_custom_date(message: types.Message, state: FSMContext):
-    chosen = parse_user_date(message.text)
-    if not chosen:
-        await message.answer("❌ Неверный формат!\nВведите дату как ДД.ММ.ГГГГ\nНапример: 25.05.2025")
-        return
-    await show_entries_for_date(message, state,
-                                message.from_user.id, chosen.isoformat(), edit=False)
-
-
-async def show_entries_for_date(message, state, user_id, target_date, edit=False):
-    entries = await get_worker_entries_by_custom_date(user_id, target_date)
-    date_str = format_date(target_date)
-    can_edit = can_edit_date(target_date)
-
-    await state.update_data(view_date=target_date)
-
-    if not entries:
-        text = f"📭 Нет записей за {date_str}"
-        buttons = [[InlineKeyboardButton(text="🔙 Назад", callback_data="view_back")]]
-        if edit:
-            await message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
-        else:
-            await message.answer(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
-        await state.set_state(WorkerEditEntry.choosing_entry)
-        return
-
-    text = f"📁 Записи за {date_str}:\n\n"
-    buttons = []
-    day_total = 0
-
-    for entry_id, name, cat_name, cat_emoji, qty, price, total, created, price_type in entries:
-        time_str = created[11:16] if len(created) > 16 else ""
-        unit_label = "м²" if price_type == 'square' else "шт"
-        qty_display = f"{qty:.2f}" if price_type == 'square' else str(int(qty))
-
-        text += f"{cat_emoji} {name} x {qty_display} {unit_label} = {int(total)} руб ({time_str})\n"
-        day_total += total
-
-        # Кнопки редактирования только для сегодня/вчера
-        if can_edit:
-            buttons.append([InlineKeyboardButton(
-                text=f"✏️ {name} x {qty_display} {unit_label} ({int(total)} руб)",
-                callback_data=f"wedit:{entry_id}"
-            )])
-
-    text += f"\n💰 Итого: {int(day_total)} руб"
     
-    if can_edit and buttons:
-        text += "\n\n✏️ Нажмите на запись для редактирования:"
-    elif not can_edit:
-        text += "\n\n⏰ Редактирование доступно только за сегодня и вчера"
-
-    buttons.append([InlineKeyboardButton(text="🔙 Назад", callback_data="view_back")])
-
-    if edit:
-        await message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
-    else:
-        await message.answer(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
-    await state.set_state(WorkerEditEntry.choosing_entry)
-
-
-@router.callback_query(F.data == "view_back")
-async def view_entries_back(callback: types.CallbackQuery, state: FSMContext):
+    await state.update_data(year=year, month=month)
+    
+    # Группируем по датам
+    text = f"📁 <b>Записи за {MONTHS_RU[month]} {year}</b>\n\n"
+    buttons = []
+    current_date = ""
+    total_month = 0
+    
+    for eid, name, qty, price, total, wdate, created, worker_name, price_type in entries:
+        if wdate != current_date:
+            text += f"\n📅 <b>{format_date(wdate)}</b>:\n"
+            current_date = wdate
+        
+        unit = "м²" if price_type == "square" else "шт"
+        qty_display = f"{qty:.2f}" if price_type == "square" else str(int(qty))
+        text += f"   • {name} × {qty_display} = {int(total)} ₽\n"
+        total_month += total
+        
+        buttons.append([InlineKeyboardButton(
+            text=f"📝 {name} ×{qty_display} ({format_date(wdate)})",
+            callback_data=f"view_entry:{eid}"
+        )])
+    
+    text += f"\n💰 <b>Итого: {int(total_month):,} ₽</b>"
+    
+    buttons.append([InlineKeyboardButton(text="🔙 Назад", callback_data="entries_back")])
+    
+    # Разбиваем на части если слишком длинное
+    if len(text) > 4000:
+        text = text[:4000] + "..."
+    
     await callback.message.edit_text(
-        "📁 За какой день показать записи?",
-        reply_markup=make_date_picker("viewdate", "myback")
+        text,
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons[:20])  # Лимит кнопок
     )
-    await state.set_state(ViewEntries.choosing_date)
+    await state.set_state(ViewEntries.viewing)
     await callback.answer()
 
 
-@router.callback_query(F.data.startswith("wedit:"), WorkerEditEntry.choosing_entry)
-async def worker_entry_chosen(callback: types.CallbackQuery, state: FSMContext):
+@router.callback_query(F.data.startswith("view_entry:"), ViewEntries.viewing)
+async def view_entry_details(callback: types.CallbackQuery, state: FSMContext):
+    """Показывает детали записи с возможностью редактирования/удаления"""
     entry_id = int(callback.data.split(":")[1])
     entry = await get_entry_by_id(entry_id)
     
     if not entry:
-        await callback.answer("Не найдена", show_alert=True)
-        await state.clear()
+        await callback.answer("❌ Запись не найдена", show_alert=True)
         return
     
-    # Проверяем что это запись этого работника
-    if entry[6] != callback.from_user.id:
-        await callback.answer("Не ваша запись!", show_alert=True)
-        await state.clear()
-        return
+    await state.update_data(entry_id=entry_id)
     
-    # Проверяем что можно редактировать
-    if not can_edit_date(entry[5]):
-        await callback.answer("Редактирование доступно только за сегодня и вчера", show_alert=True)
-        return
-
-    price_type = entry[8] if len(entry) > 8 else 'unit'
-    unit_label = "м²" if price_type == 'square' else "шт"
-    qty_display = f"{entry[2]:.2f}" if price_type == 'square' else str(int(entry[2]))
-
-    await state.update_data(
-        entry_id=entry_id, 
-        entry_name=entry[1],
-        entry_qty=entry[2], 
-        entry_total=entry[4],
-        entry_price=entry[3],
-        entry_price_type=price_type,
-        entry_date=entry[5]
-    )
+    # entry: (id, name, qty, price, total, date, worker_id, worker_name, price_type)
+    price_type = entry[8] if len(entry) > 8 else "unit"
+    unit = "м²" if price_type == "square" else "шт"
+    qty_display = f"{entry[2]:.2f}" if price_type == "square" else str(int(entry[2]))
+    
+    text = f"📦 <b>{entry[1]}</b>\n\n"
+    text += f"📅 Дата: {format_date(entry[5])}\n"
+    text += f"🔢 Количество: {qty_display} {unit}\n"
+    text += f"💵 Расценка: {int(entry[3])} ₽/{unit}\n"
+    text += f"💰 Сумма: {int(entry[4])} ₽"
     
     buttons = [
-        [InlineKeyboardButton(text="✏️ Изменить количество", callback_data="wact:edit")],
-        [InlineKeyboardButton(text="🗑 Удалить запись", callback_data="wact:delete")],
-        [InlineKeyboardButton(text="🔙 Назад", callback_data="wact:back")]
+        [InlineKeyboardButton(text="✏️ Изменить кол-во", callback_data="entry_edit")],
+        [InlineKeyboardButton(text="🗑 Удалить", callback_data="entry_delete")],
+        [InlineKeyboardButton(text="🔙 Назад", callback_data="entry_back")]
+    ]
+    
+    await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+    await callback.answer()
+
+
+@router.callback_query(F.data == "entry_edit", ViewEntries.viewing)
+async def entry_edit_start(callback: types.CallbackQuery, state: FSMContext):
+    """Начало редактирования количества"""
+    await callback.message.edit_text("✏️ Введите новое количество:")
+    await state.set_state(WorkerEditEntry.entering_quantity)
+    await callback.answer()
+
+
+@router.callback_query(F.data == "entry_delete", ViewEntries.viewing)
+async def entry_delete_confirm(callback: types.CallbackQuery, state: FSMContext):
+    """Подтверждение удаления"""
+    data = await state.get_data()
+    entry = await get_entry_by_id(data["entry_id"])
+    
+    buttons = [
+        [InlineKeyboardButton(text="✅ Да, удалить", callback_data="entry_delete_yes")],
+        [InlineKeyboardButton(text="❌ Нет", callback_data="entry_delete_no")]
     ]
     
     await callback.message.edit_text(
-        f"📦 {entry[1]}\n\n"
-        f"📅 {format_date(entry[5])}\n"
-        f"🔢 Количество: {qty_display} {unit_label}\n"
-        f"💵 Расценка: {int(entry[3])} руб/{unit_label}\n"
-        f"💰 Сумма: {int(entry[4])} руб\n\n"
-        f"Что сделать?",
+        f"⚠️ Удалить запись?\n\n📦 {entry[1]} × {int(entry[2])} = {int(entry[4])} ₽",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
     )
-    await state.set_state(WorkerEditEntry.choosing_action)
+    await state.set_state(WorkerDeleteEntry.confirming)
     await callback.answer()
 
 
-@router.callback_query(F.data.startswith("wact:"), WorkerEditEntry.choosing_action)
-async def worker_entry_action(callback: types.CallbackQuery, state: FSMContext):
-    action = callback.data.split(":")[1]
+@router.callback_query(F.data == "entry_delete_yes", WorkerDeleteEntry.confirming)
+async def entry_delete_execute(callback: types.CallbackQuery, state: FSMContext):
+    """Выполняет удаление"""
     data = await state.get_data()
+    deleted = await delete_entry_by_id(data["entry_id"])
     
-    if action == "edit":
-        price_type = data.get('entry_price_type', 'unit')
-        if price_type == 'square':
-            await callback.message.edit_text(
-                f"📦 {data['entry_name']}\n"
-                f"Текущее значение: {data['entry_qty']:.2f} м²\n\n"
-                f"Введите новую площадь (м²):"
-            )
-        else:
-            await callback.message.edit_text(
-                f"📦 {data['entry_name']}\n"
-                f"Текущее значение: {int(data['entry_qty'])} шт\n\n"
-                f"Введите новое количество:"
-            )
-        await state.set_state(WorkerEditEntry.entering_new_quantity)
-        
-    elif action == "delete":
-        price_type = data.get('entry_price_type', 'unit')
-        unit_label = "м²" if price_type == 'square' else "шт"
-        qty_display = f"{data['entry_qty']:.2f}" if price_type == 'square' else str(int(data['entry_qty']))
-        
-        buttons = [
-            [InlineKeyboardButton(text="✅ Да, удалить!", callback_data="wdel:yes")],
-            [InlineKeyboardButton(text="❌ Нет, отмена", callback_data="wdel:no")]
-        ]
+    if deleted:
         await callback.message.edit_text(
-            f"⚠️ Удалить запись?\n\n"
-            f"📦 {data['entry_name']} x {qty_display} {unit_label} = {int(data['entry_total'])} руб",
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
+            f"✅ Удалено: {deleted[1]} × {int(deleted[2])} = {int(deleted[3])} ₽"
         )
-        await state.set_state(WorkerEditEntry.confirming_delete)
-        
-    elif action == "back":
-        target_date = data.get('view_date', date.today().isoformat())
-        await show_entries_for_date(callback.message, state, 
-                                    callback.from_user.id, target_date, edit=True)
+    else:
+        await callback.message.edit_text("❌ Запись не найдена")
     
+    await state.clear()
     await callback.answer()
 
 
-@router.message(WorkerEditEntry.entering_new_quantity)
-async def worker_new_quantity(message: types.Message, state: FSMContext):
-    data = await state.get_data()
-    price_type = data.get('entry_price_type', 'unit')
-    
+@router.callback_query(F.data == "entry_delete_no", WorkerDeleteEntry.confirming)
+async def entry_delete_cancel(callback: types.CallbackQuery, state: FSMContext):
+    """Отмена удаления"""
+    await callback.message.edit_text("❌ Отменено")
+    await state.clear()
+    await callback.answer()
+
+
+@router.message(WorkerEditEntry.entering_quantity)
+async def entry_edit_quantity(message: types.Message, state: FSMContext):
+    """Обработка нового количества"""
     try:
-        if price_type == 'square':
-            new_qty = float(message.text.replace(',', '.'))
-        else:
-            new_qty = int(message.text)
-        
+        new_qty = float(message.text.replace(",", "."))
         if new_qty <= 0:
             raise ValueError
     except ValueError:
-        if price_type == 'square':
-            await message.answer("❌ Введите положительное число!\nПример: 12.5")
-        else:
-            await message.answer("❌ Введите положительное целое число!")
+        await message.answer("❌ Введите положительное число!")
         return
     
-    entry_id = data['entry_id']
-    old_qty = data['entry_qty']
-    price = data['entry_price']
-    old_total = data['entry_total']
-    new_total = new_qty * price
+    data = await state.get_data()
+    entry = await get_entry_by_id(data["entry_id"])
     
-    await update_entry_quantity(entry_id, new_qty)
+    if not entry:
+        await message.answer("❌ Запись не найдена")
+        await state.clear()
+        return
     
-    unit_label = "м²" if price_type == 'square' else "шт"
-    old_qty_display = f"{old_qty:.2f}" if price_type == 'square' else str(int(old_qty))
-    new_qty_display = f"{new_qty:.2f}" if price_type == 'square' else str(int(new_qty))
+    old_qty = entry[2]
+    old_total = entry[4]
+    new_total = new_qty * entry[3]
+    
+    await update_entry_quantity(data["entry_id"], new_qty)
+    
+    price_type = entry[8] if len(entry) > 8 else "unit"
+    unit = "м²" if price_type == "square" else "шт"
     
     await message.answer(
         f"✅ Изменено!\n\n"
-        f"📦 {data['entry_name']}\n"
-        f"Было: {old_qty_display} {unit_label} = {int(old_total)} руб\n"
-        f"Стало: {new_qty_display} {unit_label} = {int(new_total)} руб",
-        reply_markup=get_main_keyboard(message.from_user.id)
+        f"📦 {entry[1]}\n"
+        f"Было: {int(old_qty)} {unit} = {int(old_total)} ₽\n"
+        f"Стало: {int(new_qty)} {unit} = {int(new_total)} ₽"
     )
     await state.clear()
 
 
-@router.callback_query(F.data.startswith("wdel:"), WorkerEditEntry.confirming_delete)
-async def worker_delete_confirm(callback: types.CallbackQuery, state: FSMContext):
-    if callback.data.split(":")[1] == "yes":
-        data = await state.get_data()
-        deleted = await delete_entry_by_id(data["entry_id"])
-        
-        if deleted:
-            price_type = data.get('entry_price_type', 'unit')
-            unit_label = "м²" if price_type == 'square' else "шт"
-            qty_display = f"{data['entry_qty']:.2f}" if price_type == 'square' else str(int(data['entry_qty']))
-            
-            await callback.message.edit_text(
-                f"✅ Удалено!\n\n"
-                f"📦 {data['entry_name']} x {qty_display} {unit_label} = {int(data['entry_total'])} руб"
-            )
-            
-            # Уведомляем админа
-            if callback.from_user.id != ADMIN_ID:
-                try:
-                    await bot.send_message(
-                        ADMIN_ID,
-                        f"🗑 Работник удалил запись!\n\n"
-                        f"👤 {callback.from_user.full_name}\n"
-                        f"📦 {data['entry_name']} x {qty_display} {unit_label} = {int(data['entry_total'])} руб\n"
-                        f"📅 {format_date(data.get('entry_date', ''))}"
-                    )
-                except Exception as e:
-                    logging.error(f"Notify admin delete: {e}")
-        else:
-            await callback.message.edit_text("❌ Не найдена.")
-    else:
-        await callback.message.edit_text("❌ Отменено.")
+@router.callback_query(F.data == "entry_back", ViewEntries.viewing)
+async def entry_back_to_list(callback: types.CallbackQuery, state: FSMContext):
+    """Возврат к списку записей"""
+    data = await state.get_data()
+    year = data.get("year", date.today().year)
+    month = data.get("month", date.today().month)
     
-    await state.clear()
+    # Эмулируем выбор месяца заново
+    callback.data = f"entries_month:{year}:{month}"
+    await state.set_state(ViewEntries.choosing_month)
+    await my_entries_month_chosen(callback, state)
+
+
+@router.callback_query(F.data == "entries_back")
+async def entries_back_to_months(callback: types.CallbackQuery, state: FSMContext):
+    """Возврат к выбору месяца"""
+    today = date.today()
+    current_year = today.year
+    current_month = today.month
+    
+    if current_month == 1:
+        prev_month = 12
+        prev_year = current_year - 1
+    else:
+        prev_month = current_month - 1
+        prev_year = current_year
+    
+    buttons = [
+        [InlineKeyboardButton(
+            text=f"📅 {MONTHS_RU[current_month]} {current_year}",
+            callback_data=f"entries_month:{current_year}:{current_month}"
+        )],
+        [InlineKeyboardButton(
+            text=f"📅 {MONTHS_RU[prev_month]} {prev_year}",
+            callback_data=f"entries_month:{prev_year}:{prev_month}"
+        )],
+        [InlineKeyboardButton(text="❌ Отмена", callback_data="entries_cancel")]
+    ]
+    
+    await callback.message.edit_text(
+        "📁 <b>Мои записи</b>\n\nВыберите месяц:",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
+    )
+    await state.set_state(ViewEntries.choosing_month)
     await callback.answer()
 
 
-@router.callback_query(F.data == "myback")
-async def my_entries_back(callback: types.CallbackQuery, state: FSMContext):
-    await state.clear()
+@router.callback_query(F.data == "entries_cancel")
+async def entries_cancel(callback: types.CallbackQuery, state: FSMContext):
+    """Отмена просмотра записей"""
     await callback.message.edit_text("👌 Ок")
+    await state.clear()
     await callback.answer()
 
 
