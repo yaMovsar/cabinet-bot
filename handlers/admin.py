@@ -1,7 +1,7 @@
 ﻿import logging
 from aiogram import Router, types, F, Bot
 from aiogram.fsm.context import FSMContext
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, CallbackQuery
 
 from config import ADMIN_ID
 from database import (
@@ -12,90 +12,9 @@ from database import (
     get_worker_categories, get_workers_in_category,
     get_worker_recent_entries, get_entry_by_id,
     delete_entry_by_id, update_entry_quantity,
-    update_category, update_work_item, get_work_by_code
+    update_category, update_work_item, get_work_by_code,
+    get_worker, get_worker_deletion_info  # ⬅️ ДОБАВЬТЕ ЭТИ ИМПОРТЫ
 )
-@router.callback_query(F.data.startswith('delete_worker_'))
-async def confirm_delete_worker(callback: CallbackQuery):
-    """Показывает подтверждение удаления с информацией"""
-    telegram_id = int(callback.data.split('_')[2])
-    worker = await get_worker(telegram_id)
-    
-    if not worker:
-        await callback.answer("❌ Работник не найден", show_alert=True)
-        return
-    
-    # Получаем информацию о данных работника
-    info = await get_worker_deletion_info(telegram_id)
-    
-    text = f"⚠️ <b>Подтверждение удаления</b>\n\n"
-    text += f"👤 Работник: {worker['name']}\n\n"
-    text += f"📊 <b>Будет удалено:</b>\n"
-    text += f"• Записей о работе: {info['work_count']}\n"
-    text += f"• Авансов: {info['advances_count']}\n"
-    text += f"• Штрафов: {info['penalties_count']}\n\n"
-    text += f"💰 <b>Финансовая информация:</b>\n"
-    text += f"• Заработано: {info['total_earned']:,.0f} ₽\n"
-    text += f"• Выдано авансов: {info['total_advances']:,.0f} ₽\n"
-    text += f"• Штрафов: {info['total_penalties']:,.0f} ₽\n\n"
-    text += f"❗️ <b>Это действие нельзя отменить!</b>"
-    
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [
-            InlineKeyboardButton(
-                text="✅ Да, удалить", 
-                callback_data=f'confirm_delete_worker_{telegram_id}'
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                text="❌ Отмена", 
-                callback_data='admin_delete_worker'
-            )
-        ]
-    ])
-    
-    await callback.message.edit_text(text, reply_markup=keyboard)
-    await callback.answer()
-
-
-@router.callback_query(F.data.startswith('confirm_delete_worker_'))
-async def execute_delete_worker(callback: CallbackQuery):
-    """Выполняет удаление после подтверждения"""
-    telegram_id = int(callback.data.split('_')[3])
-    worker = await get_worker(telegram_id)
-    
-    if not worker:
-        await callback.answer("❌ Работник не найден", show_alert=True)
-        return
-    
-    try:
-        await delete_worker(telegram_id)
-        await callback.message.edit_text(
-            f"✅ Работник {worker['name']} и все его данные успешно удалены"
-        )
-        await callback.answer()
-    except Exception as e:
-        await callback.answer(f"❌ Ошибка: {e}", show_alert=True)
-
-
-@router.callback_query(F.data.startswith('confirm_delete_worker_'))
-async def execute_delete_worker(callback: CallbackQuery):
-    """Выполняет удаление после подтверждения"""
-    telegram_id = int(callback.data.split('_')[3])
-    worker = await get_worker(telegram_id)
-    
-    if not worker:
-        await callback.answer("❌ Работник не найден", show_alert=True)
-        return
-    
-    try:
-        await delete_worker(telegram_id)
-        await callback.message.edit_text(
-            f"✅ Работник {worker['name']} и все его данные успешно удалены"
-        )
-        await callback.answer()
-    except Exception as e:
-        await callback.answer(f"❌ Ошибка: {e}", show_alert=True)
 
 from states import (
     AdminAddCategory, AdminAddWork, AdminAddWorker,
@@ -111,6 +30,13 @@ from utils import format_date, send_long_message
 from handlers.filters import AdminFilter, StaffFilter
 
 router = Router()
+
+
+# ==================== КАТЕГОРИИ ====================
+
+@router.message(F.text == "➕ Категория", AdminFilter())
+async def add_cat_start(message: types.Message, state: FSMContext):
+    # ... остальной код как есть ...
 
 
 # ==================== КАТЕГОРИИ ====================
@@ -577,17 +503,64 @@ async def del_worker_start(message: types.Message, state: FSMContext):
 
 @router.callback_query(F.data.startswith("dwk:"), AdminDeleteWorker.choosing)
 async def del_worker_chosen(callback: types.CallbackQuery, state: FSMContext):
-    wid = int(callback.data.split(":")[1])
-    workers = await get_all_workers()
-    name = next((n for t, n in workers if t == wid), "?")
-    await state.update_data(worker_id=wid, worker_name=name)
-    buttons = [
-        [InlineKeyboardButton(text="✅ Да!", callback_data="cdwk:yes")],
-        [InlineKeyboardButton(text="❌ Нет", callback_data="cdwk:no")]
-    ]
-    await callback.message.edit_text(f"⚠️ Удалить {name}?",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+    """Показывает подтверждение удаления с информацией"""
+    telegram_id = int(callback.data.split(":")[1])
+    worker = await get_worker(telegram_id)
+    
+    if not worker:
+        await callback.answer("❌ Работник не найден", show_alert=True)
+        return
+    
+    # Получаем информацию о данных работника
+    info = await get_worker_deletion_info(telegram_id)
+    
+    text = f"⚠️ <b>Подтверждение удаления</b>\n\n"
+    text += f"👤 Работник: {worker['name']}\n\n"
+    text += f"📊 <b>Будет удалено:</b>\n"
+    text += f"• Записей о работе: {info['work_count']}\n"
+    text += f"• Авансов: {info['advances_count']}\n"
+    text += f"• Штрафов: {info['penalties_count']}\n\n"
+    text += f"💰 <b>Финансовая информация:</b>\n"
+    text += f"• Заработано: {info['total_earned']:,.0f} ₽\n"
+    text += f"• Выдано авансов: {info['total_advances']:,.0f} ₽\n"
+    text += f"• Штрафов: {info['total_penalties']:,.0f} ₽\n\n"
+    text += f"❗️ <b>Это действие нельзя отменить!</b>"
+    
+    await state.update_data(worker_id=telegram_id, worker_name=worker['name'])
+    
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(
+                text="✅ Да, удалить", 
+                callback_data='cdwk:yes'
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text="❌ Отмена", 
+                callback_data='cdwk:no'
+            )
+        ]
+    ])
+    
+    await callback.message.edit_text(text, reply_markup=keyboard)
     await state.set_state(AdminDeleteWorker.confirming)
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("cdwk:"), AdminDeleteWorker.confirming)
+async def del_worker_confirm(callback: types.CallbackQuery, state: FSMContext):
+    if callback.data.split(":")[1] == "yes":
+        data = await state.get_data()
+        try:
+            await delete_worker(data["worker_id"])
+            await callback.message.edit_text(f"✅ {data['worker_name']} и все его данные успешно удалены!")
+        except Exception as e:
+            await callback.message.edit_text(f"❌ Ошибка: {e}")
+            logging.error(f"Error deleting worker: {e}")
+    else:
+        await callback.message.edit_text("❌ Отменено.")
+    await state.clear()
     await callback.answer()
 
 
