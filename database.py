@@ -162,6 +162,22 @@ async def delete_category(code: str):
         await conn.execute("DELETE FROM categories WHERE code = $1", code)
 
 
+async def update_category(code: str, new_name: str = None, new_emoji: str = None):
+    async with pool.acquire() as conn:
+        if new_name and new_emoji:
+            await conn.execute(
+                "UPDATE categories SET name = $1, emoji = $2 WHERE code = $3",
+                new_name, new_emoji, code)
+        elif new_name:
+            await conn.execute(
+                "UPDATE categories SET name = $1 WHERE code = $2",
+                new_name, code)
+        elif new_emoji:
+            await conn.execute(
+                "UPDATE categories SET emoji = $1 WHERE code = $2",
+                new_emoji, code)
+
+
 # ==================== РАБОТНИКИ ====================
 
 async def add_worker(telegram_id: int, name: str):
@@ -183,6 +199,22 @@ async def get_all_workers():
     async with pool.acquire() as conn:
         rows = await conn.fetch("SELECT telegram_id, name FROM workers ORDER BY name")
         return [tuple(row) for row in rows]
+
+
+async def get_worker(telegram_id: int):
+    """Получает информацию о работнике по telegram_id"""
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT telegram_id, name, registered_at FROM workers WHERE telegram_id = $1",
+            telegram_id
+        )
+        if row:
+            return {
+                'telegram_id': row['telegram_id'],
+                'name': row['name'],
+                'registered_at': row['registered_at']
+            }
+        return None
 
 
 async def delete_worker(telegram_id: int):
@@ -218,6 +250,50 @@ async def delete_worker(telegram_id: int):
                 'DELETE FROM workers WHERE telegram_id = $1',
                 telegram_id
             )
+
+
+async def get_worker_deletion_info(telegram_id: int) -> dict:
+    """Получает информацию о данных работника перед удалением"""
+    async with pool.acquire() as conn:
+        work_count = await conn.fetchval(
+            'SELECT COUNT(*) FROM work_log WHERE worker_id = $1',
+            telegram_id
+        )
+        
+        advances_count = await conn.fetchval(
+            'SELECT COUNT(*) FROM advances WHERE worker_id = $1',
+            telegram_id
+        )
+        
+        penalties_count = await conn.fetchval(
+            'SELECT COUNT(*) FROM penalties WHERE worker_id = $1',
+            telegram_id
+        )
+        
+        total_earned = await conn.fetchval(
+            'SELECT COALESCE(SUM(total), 0) FROM work_log WHERE worker_id = $1',
+            telegram_id
+        )
+        
+        total_advances = await conn.fetchval(
+            'SELECT COALESCE(SUM(amount), 0) FROM advances WHERE worker_id = $1',
+            telegram_id
+        )
+        
+        total_penalties = await conn.fetchval(
+            'SELECT COALESCE(SUM(amount), 0) FROM penalties WHERE worker_id = $1',
+            telegram_id
+        )
+        
+        return {
+            'work_count': work_count,
+            'advances_count': advances_count,
+            'penalties_count': penalties_count,
+            'total_earned': total_earned,
+            'total_advances': total_advances,
+            'total_penalties': total_penalties
+        }
+
 
 async def rename_worker(telegram_id: int, new_name: str):
     async with pool.acquire() as conn:
@@ -318,6 +394,35 @@ async def delete_price_item_permanently(code: str) -> bool:
             return True
 
 
+async def update_work_item(code: str, new_name: str = None, new_price: float = None, 
+                          new_price_type: str = None):
+    async with pool.acquire() as conn:
+        if new_name:
+            await conn.execute(
+                "UPDATE price_list SET name = $1 WHERE code = $2",
+                new_name, code)
+        if new_price is not None:
+            await conn.execute(
+                "UPDATE price_list SET price = $1 WHERE code = $2",
+                new_price, code)
+        if new_price_type:
+            await conn.execute(
+                "UPDATE price_list SET price_type = $1 WHERE code = $2",
+                new_price_type, code)
+
+
+async def get_work_by_code(code: str):
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow("""
+            SELECT pl.code, pl.name, pl.price, pl.price_type, 
+                   pl.category_code, c.name, c.emoji
+            FROM price_list pl
+            JOIN categories c ON pl.category_code = c.code
+            WHERE pl.code = $1
+        """, code)
+        return tuple(row) if row else None
+
+
 # ==================== ЗАПИСИ О РАБОТЕ ====================
 
 async def add_work(worker_id: int, work_code: str, quantity: float, price: float, work_date=None) -> float:
@@ -339,6 +444,47 @@ async def delete_last_entry(worker_id: int):
                 ORDER BY created_at DESC LIMIT 1
             )
         """, worker_id)
+
+
+async def get_entry_by_id(entry_id: int):
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow("""
+            SELECT wl.id, pl.name, wl.quantity, wl.price_per_unit, wl.total,
+                   wl.work_date::TEXT, wl.worker_id, w.name, pl.price_type
+            FROM work_log wl
+            JOIN price_list pl ON wl.work_code = pl.code
+            JOIN workers w ON wl.worker_id = w.telegram_id
+            WHERE wl.id = $1
+        """, entry_id)
+        return tuple(row) if row else None
+
+
+async def delete_entry_by_id(entry_id: int):
+    async with pool.acquire() as conn:
+        entry = await conn.fetchrow("""
+            SELECT wl.id, pl.name, wl.quantity, wl.total, wl.work_date::TEXT, w.name
+            FROM work_log wl
+            JOIN price_list pl ON wl.work_code = pl.code
+            JOIN workers w ON wl.worker_id = w.telegram_id
+            WHERE wl.id = $1
+        """, entry_id)
+        if entry:
+            await conn.execute("DELETE FROM work_log WHERE id = $1", entry_id)
+            return tuple(entry)
+        return None
+
+
+async def update_entry_quantity(entry_id: int, new_quantity: float) -> bool:
+    async with pool.acquire() as conn:
+        entry = await conn.fetchrow(
+            "SELECT price_per_unit FROM work_log WHERE id = $1", entry_id)
+        if entry:
+            new_total = new_quantity * entry['price_per_unit']
+            await conn.execute(
+                "UPDATE work_log SET quantity = $1, total = $2 WHERE id = $3",
+                new_quantity, new_total, entry_id)
+            return True
+        return False
 
 
 # ==================== ОТЧЁТЫ ====================
@@ -465,9 +611,10 @@ async def get_worker_recent_entries(worker_id: int, limit: int = 20):
     async with pool.acquire() as conn:
         rows = await conn.fetch("""
             SELECT wl.id, pl.name, wl.quantity, wl.price_per_unit, wl.total,
-                   wl.work_date::TEXT, wl.created_at::TEXT, pl.price_type
+                   wl.work_date::TEXT, wl.created_at::TEXT, w.name, pl.price_type
             FROM work_log wl
             JOIN price_list pl ON wl.work_code = pl.code
+            JOIN workers w ON wl.worker_id = w.telegram_id
             WHERE wl.worker_id = $1
             ORDER BY wl.work_date DESC, wl.created_at DESC
             LIMIT $2
@@ -475,45 +622,19 @@ async def get_worker_recent_entries(worker_id: int, limit: int = 20):
         return [tuple(row) for row in rows]
 
 
-async def delete_entry_by_id(entry_id: int):
+async def get_worker_entries_by_custom_date(worker_id: int, target_date):
+    target_date = parse_date(target_date)
     async with pool.acquire() as conn:
-        entry = await conn.fetchrow("""
-            SELECT wl.id, pl.name, wl.quantity, wl.total, wl.work_date::TEXT, w.name
+        rows = await conn.fetch("""
+            SELECT wl.id, pl.name, c.name, c.emoji, wl.quantity,
+                   wl.price_per_unit, wl.total, wl.created_at::TEXT, pl.price_type
             FROM work_log wl
             JOIN price_list pl ON wl.work_code = pl.code
-            JOIN workers w ON wl.worker_id = w.telegram_id
-            WHERE wl.id = $1
-        """, entry_id)
-        if entry:
-            await conn.execute("DELETE FROM work_log WHERE id = $1", entry_id)
-            return tuple(entry)
-        return None
-
-
-async def update_entry_quantity(entry_id: int, new_quantity: float) -> bool:
-    async with pool.acquire() as conn:
-        entry = await conn.fetchrow(
-            "SELECT price_per_unit FROM work_log WHERE id = $1", entry_id)
-        if entry:
-            new_total = new_quantity * entry['price_per_unit']
-            await conn.execute(
-                "UPDATE work_log SET quantity = $1, total = $2 WHERE id = $3",
-                new_quantity, new_total, entry_id)
-            return True
-        return False
-
-
-async def get_entry_by_id(entry_id: int):
-    async with pool.acquire() as conn:
-        row = await conn.fetchrow("""
-            SELECT wl.id, pl.name, wl.quantity, wl.price_per_unit, wl.total,
-                   wl.work_date::TEXT, wl.worker_id, w.name, pl.price_type
-            FROM work_log wl
-            JOIN price_list pl ON wl.work_code = pl.code
-            JOIN workers w ON wl.worker_id = w.telegram_id
-            WHERE wl.id = $1
-        """, entry_id)
-        return tuple(row) if row else None
+            JOIN categories c ON pl.category_code = c.code
+            WHERE wl.worker_id = $1 AND wl.work_date = $2
+            ORDER BY wl.created_at
+        """, worker_id, target_date)
+        return [tuple(row) for row in rows]
 
 
 async def get_worker_monthly_details(worker_id: int, year: int = None, month: int = None):
@@ -745,21 +866,6 @@ async def get_all_advances_monthly(year: int = None, month: int = None):
         return [tuple(row) for row in rows]
 
 
-async def get_worker_entries_by_custom_date(worker_id: int, target_date):
-    target_date = parse_date(target_date)
-    async with pool.acquire() as conn:
-        rows = await conn.fetch("""
-            SELECT wl.id, pl.name, c.name, c.emoji, wl.quantity,
-                   wl.price_per_unit, wl.total, wl.created_at::TEXT, pl.price_type
-            FROM work_log wl
-            JOIN price_list pl ON wl.work_code = pl.code
-            JOIN categories c ON pl.category_code = c.code
-            WHERE wl.worker_id = $1 AND wl.work_date = $2
-            ORDER BY wl.created_at
-        """, worker_id, target_date)
-        return [tuple(row) for row in rows]
-
-
 # ==================== ШТРАФЫ ====================
 
 async def add_penalty(worker_id: int, amount: float, reason: str = "", penalty_date=None):
@@ -847,131 +953,3 @@ async def update_reminder_settings(**kwargs):
         vals.append(1)
         await conn.execute(
             f"UPDATE reminder_settings SET {sets} WHERE id = ${len(vals)}", *vals)
-
-async def update_category(code: str, new_name: str = None, new_emoji: str = None):
-    async with pool.acquire() as conn:
-        if new_name and new_emoji:
-            await conn.execute(
-                "UPDATE categories SET name = $1, emoji = $2 WHERE code = $3",
-                new_name, new_emoji, code)
-        elif new_name:
-            await conn.execute(
-                "UPDATE categories SET name = $1 WHERE code = $2",
-                new_name, code)
-        elif new_emoji:
-            await conn.execute(
-                "UPDATE categories SET emoji = $1 WHERE code = $2",
-                new_emoji, code)
-
-
-async def update_work_item(code: str, new_name: str = None, new_price: float = None, 
-                          new_price_type: str = None):
-    async with pool.acquire() as conn:
-        if new_name:
-            await conn.execute(
-                "UPDATE price_list SET name = $1 WHERE code = $2",
-                new_name, code)
-        if new_price is not None:
-            await conn.execute(
-                "UPDATE price_list SET price = $1 WHERE code = $2",
-                new_price, code)
-        if new_price_type:
-            await conn.execute(
-                "UPDATE price_list SET price_type = $1 WHERE code = $2",
-                new_price_type, code)
-
-
-async def get_work_by_code(code: str):
-    async with pool.acquire() as conn:
-        row = await conn.fetchrow("""
-            SELECT pl.code, pl.name, pl.price, pl.price_type, 
-                   pl.category_code, c.name, c.emoji
-            FROM price_list pl
-            JOIN categories c ON pl.category_code = c.code
-            WHERE pl.code = $1
-        """, code)
-        return tuple(row) if row else None
-
-async def get_worker_deletion_info(telegram_id: int) -> dict:
-    """Получает информацию о данных работника перед удалением"""
-    async with pool.acquire() as conn:
-        work_count = await conn.fetchval(
-            'SELECT COUNT(*) FROM work_log WHERE worker_id = $1',
-            telegram_id
-        )
-        
-        advances_count = await conn.fetchval(
-            'SELECT COUNT(*) FROM advances WHERE worker_id = $1',
-            telegram_id
-        )
-        
-        penalties_count = await conn.fetchval(
-            'SELECT COUNT(*) FROM penalties WHERE worker_id = $1',
-            telegram_id
-        )
-        
-        total_earned = await conn.fetchval(
-            'SELECT COALESCE(SUM(total), 0) FROM work_log WHERE worker_id = $1',
-            telegram_id
-        )
-        
-        total_advances = await conn.fetchval(
-            'SELECT COALESCE(SUM(amount), 0) FROM advances WHERE worker_id = $1',
-            telegram_id
-        )
-        
-        total_penalties = await conn.fetchval(
-            'SELECT COALESCE(SUM(amount), 0) FROM penalties WHERE worker_id = $1',
-            telegram_id
-        )
-        
-        return {
-            'work_count': work_count,
-            'advances_count': advances_count,
-            'penalties_count': penalties_count,
-            'total_earned': total_earned,
-            'total_advances': total_advances,
-            'total_penalties': total_penalties
-        }
-
-async def get_worker_deletion_info(telegram_id: int) -> dict:
-    """Получает информацию о данных работника перед удалением"""
-    async with pool.acquire() as conn:
-        work_count = await conn.fetchval(
-            'SELECT COUNT(*) FROM work_log WHERE worker_id = $1',
-            telegram_id
-        )
-        
-        advances_count = await conn.fetchval(
-            'SELECT COUNT(*) FROM advances WHERE worker_id = $1',
-            telegram_id
-        )
-        
-        penalties_count = await conn.fetchval(
-            'SELECT COUNT(*) FROM penalties WHERE worker_id = $1',
-            telegram_id
-        )
-        
-        total_earned = await conn.fetchval(
-            'SELECT COALESCE(SUM(total), 0) FROM work_log WHERE worker_id = $1',
-            telegram_id
-        )
-        
-        total_advances = await conn.fetchval(
-            'SELECT COALESCE(SUM(amount), 0) FROM advances WHERE worker_id = $1',
-            telegram_id
-        )
-        
-        total_penalties = await conn.fetchval(
-            'SELECT COALESCE(SUM(amount), 0) FROM penalties WHERE worker_id = $1',
-            telegram_id
-        )
-        
-        return {
-            'work_count': work_count,
-            'advances_count': advances_count,
-            'penalties_count': penalties_count,
-            'total_earned': total_earned,
-            'total_advances': total_advances,
-            'total_penalties': total_penalties
-        }
