@@ -13,7 +13,7 @@ from database import (
     get_worker_recent_entries, get_entry_by_id,
     delete_entry_by_id, update_entry_quantity,
     update_category, update_work_item, get_work_by_code,
-    get_worker, get_worker_deletion_info  # ⬅️ ДОБАВЬТЕ ЭТИ ИМПОРТЫ
+    get_worker, get_worker_deletion_info
 )
 
 from states import (
@@ -30,13 +30,6 @@ from utils import format_date, send_long_message
 from handlers.filters import AdminFilter, StaffFilter
 
 router = Router()
-
-
-# ==================== КАТЕГОРИИ ====================
-
-@router.message(F.text == "➕ Категория", AdminFilter())
-async def add_cat_start(message: types.Message, state: FSMContext):
-    # ... остальной код как есть ...
 
 
 # ==================== КАТЕГОРИИ ====================
@@ -511,7 +504,6 @@ async def del_worker_chosen(callback: types.CallbackQuery, state: FSMContext):
         await callback.answer("❌ Работник не найден", show_alert=True)
         return
     
-    # Получаем информацию о данных работника
     info = await get_worker_deletion_info(telegram_id)
     
     text = f"⚠️ <b>Подтверждение удаления</b>\n\n"
@@ -529,18 +521,8 @@ async def del_worker_chosen(callback: types.CallbackQuery, state: FSMContext):
     await state.update_data(worker_id=telegram_id, worker_name=worker['name'])
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [
-            InlineKeyboardButton(
-                text="✅ Да, удалить", 
-                callback_data='cdwk:yes'
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                text="❌ Отмена", 
-                callback_data='cdwk:no'
-            )
-        ]
+        [InlineKeyboardButton(text="✅ Да, удалить", callback_data='cdwk:yes')],
+        [InlineKeyboardButton(text="❌ Отмена", callback_data='cdwk:no')]
     ])
     
     await callback.message.edit_text(text, reply_markup=keyboard)
@@ -564,18 +546,6 @@ async def del_worker_confirm(callback: types.CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
-@router.callback_query(F.data.startswith("cdwk:"), AdminDeleteWorker.confirming)
-async def del_worker_confirm(callback: types.CallbackQuery, state: FSMContext):
-    if callback.data.split(":")[1] == "yes":
-        data = await state.get_data()
-        await delete_worker(data["worker_id"])
-        await callback.message.edit_text(f"✅ {data['worker_name']} удалён!")
-    else:
-        await callback.message.edit_text("❌ Отменено.")
-    await state.clear()
-    await callback.answer()
-
-
 @router.callback_query(F.data == "cdel")
 async def cancel_del(callback: types.CallbackQuery, state: FSMContext):
     await state.clear()
@@ -583,7 +553,7 @@ async def cancel_del(callback: types.CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
-# ==================== ЗАПИСИ РАБОТНИКОВ ====================
+# ====================  ЗАПИСИ РАБОТНИКОВ ====================
 
 @router.message(F.text == "🔧 Записи работников", AdminFilter())
 async def admin_entries_start(message: types.Message, state: FSMContext):
