@@ -14,6 +14,68 @@ from database import (
     delete_entry_by_id, update_entry_quantity,
     update_category, update_work_item, get_work_by_code
 )
+@router.callback_query(F.data.startswith('delete_worker_'))
+async def confirm_delete_worker(callback: CallbackQuery):
+    """Показывает подтверждение удаления с информацией"""
+    telegram_id = int(callback.data.split('_')[2])
+    worker = await get_worker(telegram_id)
+    
+    if not worker:
+        await callback.answer("❌ Работник не найден", show_alert=True)
+        return
+    
+    # Получаем информацию о данных работника
+    info = await get_worker_deletion_info(telegram_id)
+    
+    text = f"⚠️ <b>Подтверждение удаления</b>\n\n"
+    text += f"👤 Работник: {worker['name']}\n\n"
+    text += f"📊 <b>Будет удалено:</b>\n"
+    text += f"• Записей о работе: {info['work_count']}\n"
+    text += f"• Авансов: {info['advances_count']}\n"
+    text += f"• Штрафов: {info['penalties_count']}\n\n"
+    text += f"💰 <b>Финансовая информация:</b>\n"
+    text += f"• Заработано: {info['total_earned']:,.0f} ₽\n"
+    text += f"• Выдано авансов: {info['total_advances']:,.0f} ₽\n"
+    text += f"• Штрафов: {info['total_penalties']:,.0f} ₽\n\n"
+    text += f"❗️ <b>Это действие нельзя отменить!</b>"
+    
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(
+                text="✅ Да, удалить", 
+                callback_data=f'confirm_delete_worker_{telegram_id}'
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text="❌ Отмена", 
+                callback_data='admin_delete_worker'
+            )
+        ]
+    ])
+    
+    await callback.message.edit_text(text, reply_markup=keyboard)
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith('confirm_delete_worker_'))
+async def execute_delete_worker(callback: CallbackQuery):
+    """Выполняет удаление после подтверждения"""
+    telegram_id = int(callback.data.split('_')[3])
+    worker = await get_worker(telegram_id)
+    
+    if not worker:
+        await callback.answer("❌ Работник не найден", show_alert=True)
+        return
+    
+    try:
+        await delete_worker(telegram_id)
+        await callback.message.edit_text(
+            f"✅ Работник {worker['name']} и все его данные успешно удалены"
+        )
+        await callback.answer()
+    except Exception as e:
+        await callback.answer(f"❌ Ошибка: {e}", show_alert=True)
 
 from states import (
     AdminAddCategory, AdminAddWork, AdminAddWorker,

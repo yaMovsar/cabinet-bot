@@ -863,3 +863,45 @@ async def get_work_by_code(code: str):
             WHERE pl.code = $1
         """, code)
         return tuple(row) if row else None
+
+async def get_worker_deletion_info(telegram_id: int) -> dict:
+    """Получает информацию о данных работника перед удалением"""
+    async with pool.acquire() as conn:
+        work_count = await conn.fetchval(
+            'SELECT COUNT(*) FROM work_log WHERE worker_id = $1',
+            telegram_id
+        )
+        
+        advances_count = await conn.fetchval(
+            'SELECT COUNT(*) FROM advances WHERE worker_id = $1',
+            telegram_id
+        )
+        
+        penalties_count = await conn.fetchval(
+            'SELECT COUNT(*) FROM penalties WHERE worker_id = $1',
+            telegram_id
+        )
+        
+        total_earned = await conn.fetchval(
+            'SELECT COALESCE(SUM(total), 0) FROM work_log WHERE worker_id = $1',
+            telegram_id
+        )
+        
+        total_advances = await conn.fetchval(
+            'SELECT COALESCE(SUM(amount), 0) FROM advances WHERE worker_id = $1',
+            telegram_id
+        )
+        
+        total_penalties = await conn.fetchval(
+            'SELECT COALESCE(SUM(amount), 0) FROM penalties WHERE worker_id = $1',
+            telegram_id
+        )
+        
+        return {
+            'work_count': work_count,
+            'advances_count': advances_count,
+            'penalties_count': penalties_count,
+            'total_earned': total_earned,
+            'total_advances': total_advances,
+            'total_penalties': total_penalties
+        }
