@@ -518,16 +518,15 @@ async def del_worker_chosen(callback: types.CallbackQuery, state: FSMContext):
     text += f"• Выдано авансов: {info['total_advances']:,.0f} ₽\n"
     text += f"• Штрафов: {info['total_penalties']:,.0f} ₽\n\n"
     text += f"❗️ <b>Это действие нельзя отменить!</b>"
-    parse_mode="HTML"
 
     await state.update_data(worker_id=telegram_id, worker_name=worker['name'])
-    
+
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="✅ Да, удалить", callback_data='cdwk:yes')],
         [InlineKeyboardButton(text="❌ Отмена", callback_data='cdwk:no')]
     ])
-    
-    await callback.message.edit_text(text, reply_markup=keyboard)
+
+    await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
     await state.set_state(AdminDeleteWorker.confirming)
     await callback.answer()
 
@@ -583,7 +582,6 @@ async def admin_entries_choose_month(callback: types.CallbackQuery, state: FSMCo
     current_year = today.year
     current_month = today.month
     
-    # Прошлый месяц
     if current_month == 1:
         prev_month = 12
         prev_year = current_year - 1
@@ -606,8 +604,8 @@ async def admin_entries_choose_month(callback: types.CallbackQuery, state: FSMCo
     
     await callback.message.edit_text(
         f"👤 <b>{wname}</b>\n\nВыберите месяц:",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
-	parse_mode="HTML"
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons),
+        parse_mode="HTML"
     )
     await state.set_state(AdminManageEntries.choosing_month)
     await callback.answer()
@@ -640,20 +638,17 @@ async def admin_entries_show(callback: types.CallbackQuery, state: FSMContext):
         await callback.answer()
         return
     
-    # Группируем по датам
     text = f"📁 <b>{wname}</b>\n"
     text += f"📅 {MONTHS_RU[month]} {year}\n\n"
     buttons = []
     current_date = ""
     total_month = 0
-    parse_mode="HTML"
-
+    
     for eid, name, qty, price, total, wdate, created, worker_name, price_type in entries:
         if wdate != current_date:
             text += f"\n📅 <b>{format_date(wdate)}</b>:\n"
             current_date = wdate
-	    parse_mode="HTML"
-
+        
         unit = "м²" if price_type == "square" else "шт"
         qty_display = f"{qty:.2f}" if price_type == "square" else str(int(qty))
         text += f"   • {name} × {qty_display} = {int(total)} ₽\n"
@@ -665,18 +660,17 @@ async def admin_entries_show(callback: types.CallbackQuery, state: FSMContext):
         )])
     
     text += f"\n💰 <b>Итого: {int(total_month):,} ₽</b>"
-    parse_mode="HTML"
-
+    
     buttons.append([InlineKeyboardButton(text="🔙 К месяцам", callback_data="ae_back_months")])
     buttons.append([InlineKeyboardButton(text="❌ Отмена", callback_data="ae_cancel")])
     
-    # Обрезаем если слишком длинный текст
     if len(text) > 4000:
         text = text[:4000] + "..."
     
     await callback.message.edit_text(
         text,
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons[:25])  # Лимит кнопок
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons[:25]),
+        parse_mode="HTML"
     )
     await state.set_state(AdminManageEntries.viewing_entries)
     await callback.answer()
@@ -708,8 +702,8 @@ async def admin_entry_chosen(callback: types.CallbackQuery, state: FSMContext):
         f"🔢 Кол-во: {qty_display} {unit_label}\n"
         f"💵 Расценка: {int(entry[3])} ₽/{unit_label}\n"
         f"💰 Сумма: {int(entry[4])} ₽",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
-	parse_mode="HTML"
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons),
+        parse_mode="HTML"
     )
     await state.set_state(AdminManageEntries.choosing_action)
     await callback.answer()
@@ -738,7 +732,6 @@ async def admin_entry_action(callback: types.CallbackQuery, state: FSMContext):
         await state.set_state(AdminManageEntries.confirming_delete)
         
     elif action == "back":
-        # Возврат к списку записей
         data = await state.get_data()
         year = data.get("year", date.today().year)
         month = data.get("month", date.today().month)
@@ -851,8 +844,8 @@ async def admin_entries_back_to_months(callback: types.CallbackQuery, state: FSM
     
     await callback.message.edit_text(
         f"👤 <b>{wname}</b>\n\nВыберите месяц:",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
-	parse_mode="HTML"
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons),
+        parse_mode="HTML"
     )
     await state.set_state(AdminManageEntries.choosing_month)
     await callback.answer()
