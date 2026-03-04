@@ -186,10 +186,38 @@ async def get_all_workers():
 
 
 async def delete_worker(telegram_id: int):
+    """Удаляет работника и ВСЕ его связанные данные"""
     async with pool.acquire() as conn:
-        await conn.execute("DELETE FROM worker_categories WHERE worker_id = $1", telegram_id)
-        await conn.execute("DELETE FROM workers WHERE telegram_id = $1", telegram_id)
-
+        async with conn.transaction():
+            # 1. Удаляем записи о работе
+            await conn.execute(
+                'DELETE FROM work_log WHERE worker_id = $1',
+                telegram_id
+            )
+            
+            # 2. Удаляем авансы
+            await conn.execute(
+                'DELETE FROM advances WHERE worker_id = $1',
+                telegram_id
+            )
+            
+            # 3. Удаляем штрафы
+            await conn.execute(
+                'DELETE FROM penalties WHERE worker_id = $1',
+                telegram_id
+            )
+            
+            # 4. Удаляем привязки к категориям
+            await conn.execute(
+                'DELETE FROM worker_categories WHERE worker_id = $1',
+                telegram_id
+            )
+            
+            # 5. Удаляем самого работника
+            await conn.execute(
+                'DELETE FROM workers WHERE telegram_id = $1',
+                telegram_id
+            )
 
 async def rename_worker(telegram_id: int, new_name: str):
     async with pool.acquire() as conn:
@@ -863,6 +891,48 @@ async def get_work_by_code(code: str):
             WHERE pl.code = $1
         """, code)
         return tuple(row) if row else None
+
+async def get_worker_deletion_info(telegram_id: int) -> dict:
+    """Получает информацию о данных работника перед удалением"""
+    async with pool.acquire() as conn:
+        work_count = await conn.fetchval(
+            'SELECT COUNT(*) FROM work_log WHERE worker_id = $1',
+            telegram_id
+        )
+        
+        advances_count = await conn.fetchval(
+            'SELECT COUNT(*) FROM advances WHERE worker_id = $1',
+            telegram_id
+        )
+        
+        penalties_count = await conn.fetchval(
+            'SELECT COUNT(*) FROM penalties WHERE worker_id = $1',
+            telegram_id
+        )
+        
+        total_earned = await conn.fetchval(
+            'SELECT COALESCE(SUM(total), 0) FROM work_log WHERE worker_id = $1',
+            telegram_id
+        )
+        
+        total_advances = await conn.fetchval(
+            'SELECT COALESCE(SUM(amount), 0) FROM advances WHERE worker_id = $1',
+            telegram_id
+        )
+        
+        total_penalties = await conn.fetchval(
+            'SELECT COALESCE(SUM(amount), 0) FROM penalties WHERE worker_id = $1',
+            telegram_id
+        )
+        
+        return {
+            'work_count': work_count,
+            'advances_count': advances_count,
+            'penalties_count': penalties_count,
+            'total_earned': total_earned,
+            'total_advances': total_advances,
+            'total_penalties': total_penalties
+        }
 
 async def get_worker_deletion_info(telegram_id: int) -> dict:
     """Получает информацию о данных работника перед удалением"""

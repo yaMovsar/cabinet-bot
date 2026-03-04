@@ -77,6 +77,26 @@ async def execute_delete_worker(callback: CallbackQuery):
     except Exception as e:
         await callback.answer(f"❌ Ошибка: {e}", show_alert=True)
 
+
+@router.callback_query(F.data.startswith('confirm_delete_worker_'))
+async def execute_delete_worker(callback: CallbackQuery):
+    """Выполняет удаление после подтверждения"""
+    telegram_id = int(callback.data.split('_')[3])
+    worker = await get_worker(telegram_id)
+    
+    if not worker:
+        await callback.answer("❌ Работник не найден", show_alert=True)
+        return
+    
+    try:
+        await delete_worker(telegram_id)
+        await callback.message.edit_text(
+            f"✅ Работник {worker['name']} и все его данные успешно удалены"
+        )
+        await callback.answer()
+    except Exception as e:
+        await callback.answer(f"❌ Ошибка: {e}", show_alert=True)
+
 from states import (
     AdminAddCategory, AdminAddWork, AdminAddWorker,
     AdminAssignCategory, AdminRemoveCategory,
