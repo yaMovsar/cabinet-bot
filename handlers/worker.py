@@ -523,7 +523,7 @@ async def view_entry_details(callback: types.CallbackQuery, state: FSMContext):
 async def entry_edit_start(callback: types.CallbackQuery, state: FSMContext):
     """Начало редактирования количества"""
     await callback.message.edit_text("✏️ Введите новое количество:")
-    await state.set_state(WorkerEditEntry.entering_quantity)
+    await state.set_state(WorkerEditEntry.entering_new_quantity)  # ← исправить
     await callback.answer()
 
 
@@ -571,7 +571,7 @@ async def entry_delete_cancel(callback: types.CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
-@router.message(WorkerEditEntry.entering_quantity)
+@router.message(WorkerEditEntry.entering_new_quantity)  # ← исправить
 async def entry_edit_quantity(message: types.Message, state: FSMContext):
     """Обработка нового количества"""
     try:
