@@ -14,7 +14,8 @@ from database import (
     get_worker_recent_entries, get_entry_by_id,
     delete_entry_by_id, update_entry_quantity,
     update_category, update_work_item, get_work_by_code,
-    get_worker, get_worker_deletion_info, get_worker_entries_by_month
+    get_worker, get_worker_deletion_info, get_worker_entries_by_month,
+    recalculate_entries_from_march
 )
 
 from states import (
@@ -379,10 +380,51 @@ async def edit_price_done(message: types.Message, state: FSMContext):
     except ValueError:
         await message.answer("❌ Положительное число!")
         return
+    
     data = await state.get_data()
-    await update_price(data["code"], p)
-    await message.answer(f"✅ Расценка: {int(p)} руб", reply_markup=get_edit_keyboard())
+    await state.update_data(new_price=p)
+    
+    buttons = [
+        [InlineKeyboardButton(text="✅ Да, пересчитать с марта", callback_data="recalc:yes")],
+        [InlineKeyboardButton(text="❌ Нет, только для новых", callback_data="recalc:no")]
+    ]
+    
+    await message.answer(
+        f"💰 Новая цена: {int(p)} руб\n\n"
+        f"♻️ Пересчитать все записи с 01.03.2025?",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
+    )
+    await state.set_state(AdminEditPrice.confirming_recalculation)
+
+
+@router.callback_query(F.data.startswith("recalc:"), AdminEditPrice.confirming_recalculation)
+async def recalc_confirm(callback: types.CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    work_code = data["code"]
+    new_price = data["new_price"]
+    
+    # Обновляем цену в прайсе
+    await update_price(work_code, new_price)
+    
+    if callback.data.split(":")[1] == "yes":
+        # Пересчитываем записи
+        stats = await recalculate_entries_from_march(work_code, new_price)
+        
+        await callback.message.edit_text(
+            f"✅ Цена обновлена: {int(new_price)} руб\n\n"
+            f"♻️ Пересчитано записей: {stats['count']}\n"
+            f"📊 Было: {int(stats['old_total'])} руб\n"
+            f"📊 Стало: {int(stats['new_total'])} руб\n"
+            f"{'📈' if stats['difference'] > 0 else '📉'} Разница: {int(abs(stats['difference']))} руб"
+        )
+    else:
+        await callback.message.edit_text(
+            f"✅ Цена обновлена: {int(new_price)} руб\n"
+            f"ℹ️ Старые записи не изменены"
+        )
+    
     await state.clear()
+    await callback.answer()
 
 
 # ==================== УДАЛЕНИЕ ====================

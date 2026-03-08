@@ -961,6 +961,42 @@ async def update_reminder_settings(**kwargs):
         await conn.execute(
             f"UPDATE reminder_settings SET {sets} WHERE id = ${len(vals)}", *vals)
 
+# ==================== ПЕРЕСЧЁТ ЗАПИСЕЙ ====================
+
+async def recalculate_entries_from_march(work_code: str, new_price: float) -> dict:
+    """
+    Пересчитывает все записи с марта 2025 для указанной работы
+    Возвращает статистику: кол-во обновлённых записей и разницу сумм
+    """
+    async with pool.acquire() as conn:
+        # Получаем все записи с 01.03.2025
+        entries = await conn.fetch("""
+            SELECT id, quantity, price_per_unit, total
+            FROM work_log
+            WHERE work_code = $1 AND work_date >= '2025-03-01'
+        """, work_code)
+        
+        if not entries:
+            return {'count': 0, 'old_total': 0, 'new_total': 0, 'difference': 0}
+        
+        old_total = sum(e['total'] for e in entries)
+        new_total = sum(e['quantity'] * new_price for e in entries)
+        
+        # Обновляем все записи
+        await conn.execute("""
+            UPDATE work_log
+            SET price_per_unit = $1, total = quantity * $1
+            WHERE work_code = $2 AND work_date >= '2025-03-01'
+        """, new_price, work_code)
+        
+        return {
+            'count': len(entries),
+            'old_total': old_total,
+            'new_total': new_total,
+            'difference': new_total - old_total
+        }
+
+
 async def get_worker_entries_by_month(worker_id: int, year: int, month: int):
     """Получает записи работника за конкретный месяц"""
     async with pool.acquire() as conn:
