@@ -424,60 +424,6 @@ async def my_entries_start(message: types.Message, state: FSMContext):
     await state.set_state(ViewEntries.choosing_month)
 
 
-@router.callback_query(F.data.startswith("entries_month:"), ViewEntries.choosing_month)
-async def my_entries_month_chosen(callback: types.CallbackQuery, state: FSMContext):
-    """Показывает записи за выбранный месяц"""
-    parts = callback.data.split(":")
-    year = int(parts[1])
-    month = int(parts[2])
-    
-    worker_id = callback.from_user.id
-    entries = await get_worker_entries_by_month(worker_id, year, month)
-    
-    if not entries:
-        await callback.message.edit_text(
-            f"📭 У вас нет записей за {MONTHS_RU[month]} {year}"
-        )
-        await state.clear()
-        await callback.answer()
-        return
-    
-    await state.update_data(year=year, month=month)
-    
-    text = f"📁 <b>Записи за {MONTHS_RU[month]} {year}</b>\n\n"
-    buttons = []
-    current_date = ""
-    total_month = 0
-
-    for eid, name, qty, price, total, wdate, created, worker_name, price_type in entries:
-        if wdate != current_date:
-            text += f"\n📅 <b>{format_date(wdate)}</b>:\n"
-            current_date = wdate
-
-        unit = "м²" if price_type == "square" else "шт"
-        qty_display = f"{qty:.2f}" if price_type == "square" else str(int(qty))
-        text += f"   • {name} × {qty_display} = {int(total)} ₽\n"
-        total_month += total
-        
-        buttons.append([InlineKeyboardButton(
-            text=f"📝 {name} ×{qty_display} ({format_date(wdate)})",
-            callback_data=f"view_entry:{eid}"
-        )])
-    
-    text += f"\n💰 <b>Итого: {int(total_month):,} ₽</b>"
-    
-    buttons.append([InlineKeyboardButton(text="🔙 Назад", callback_data="entries_back")])
-    
-    if len(text) > 4000:
-        text = text[:4000] + "..."
-    
-    await callback.message.edit_text(
-        text,
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons[:20]),
-        parse_mode="HTML"
-    )
-    await state.set_state(ViewEntries.viewing)
-    await callback.answer()
 
 
 @router.callback_query(F.data.startswith("view_entry:"), ViewEntries.viewing)
@@ -605,16 +551,73 @@ async def entry_edit_quantity(message: types.Message, state: FSMContext):
     await state.clear()
 
 
+async def _render_month_entries(callback: types.CallbackQuery, state: FSMContext,
+                                 year: int, month: int):
+    """Общая функция отображения записей за месяц"""
+    worker_id = callback.from_user.id
+    entries = await get_worker_entries_by_month(worker_id, year, month)
+
+    if not entries:
+        await callback.message.edit_text(
+            f"📭 У вас нет записей за {MONTHS_RU[month]} {year}"
+        )
+        await state.clear()
+        await callback.answer()
+        return
+
+    await state.update_data(year=year, month=month)
+
+    text = f"📁 <b>Записи за {MONTHS_RU[month]} {year}</b>\n\n"
+    buttons = []
+    current_date = ""
+    total_month = 0
+
+    for eid, name, qty, price, total, wdate, created, worker_name, price_type in entries:
+        if wdate != current_date:
+            text += f"\n📅 <b>{format_date(wdate)}</b>:\n"
+            current_date = wdate
+
+        unit = "м²" if price_type == "square" else "шт"
+        qty_display = f"{qty:.2f}" if price_type == "square" else str(int(qty))
+        text += f"   • {name} × {qty_display} = {int(total)} ₽\n"
+        total_month += total
+
+        buttons.append([InlineKeyboardButton(
+            text=f"📝 {name} ×{qty_display} ({format_date(wdate)})",
+            callback_data=f"view_entry:{eid}"
+        )])
+
+    text += f"\n💰 <b>Итого: {int(total_month):,} ₽</b>"
+    buttons.append([InlineKeyboardButton(text="🔙 Назад", callback_data="entries_back")])
+
+    if len(text) > 4000:
+        text = text[:4000] + "..."
+
+    await callback.message.edit_text(
+        text,
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons[:20]),
+        parse_mode="HTML"
+    )
+    await state.set_state(ViewEntries.viewing)
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("entries_month:"), ViewEntries.choosing_month)
+async def my_entries_month_chosen(callback: types.CallbackQuery, state: FSMContext):
+    """Показывает записи за выбранный месяц"""
+    parts = callback.data.split(":")
+    year = int(parts[1])
+    month = int(parts[2])
+    await _render_month_entries(callback, state, year, month)
+
+
 @router.callback_query(F.data == "entry_back", ViewEntries.viewing)
 async def entry_back_to_list(callback: types.CallbackQuery, state: FSMContext):
     """Возврат к списку записей"""
     data = await state.get_data()
     year = data.get("year", date.today().year)
     month = data.get("month", date.today().month)
-    
-    callback.data = f"entries_month:{year}:{month}"
-    await state.set_state(ViewEntries.choosing_month)
-    await my_entries_month_chosen(callback, state)
+    await _render_month_entries(callback, state, year, month)
 
 
 @router.callback_query(F.data == "entries_back")
