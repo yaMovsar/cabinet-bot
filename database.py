@@ -25,8 +25,15 @@ def parse_date(value):
 async def init_db():
     """Инициализация пула соединений и создание таблиц"""
     global pool
-    pool = await asyncpg.create_pool(DATABASE_URL, min_size=2, max_size=10)
-    
+    pool = await asyncpg.create_pool(
+        DATABASE_URL, 
+        min_size=5,           # Минимум соединений
+        max_size=18,          # Максимум (из 22 доступных на Railway)
+        max_inactive_connection_lifetime=300,  # Закрывать неактивные через 5 мин
+        command_timeout=60,   # Таймаут команды 60 сек
+        timeout=30            # Таймаут получения соединения из пула
+    )
+
     async with pool.acquire() as conn:
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS workers (
@@ -105,26 +112,26 @@ async def init_db():
                 report_enabled BOOLEAN DEFAULT TRUE
             )
         """)
-        
+
         # Миграции для существующей БД
         await conn.execute("""
-            ALTER TABLE price_list 
+            ALTER TABLE price_list
             ADD COLUMN IF NOT EXISTS price_type TEXT NOT NULL DEFAULT 'unit'
         """)
         await conn.execute("""
             ALTER TABLE work_log
             ALTER COLUMN quantity TYPE REAL
         """)
-        
+
         count = await conn.fetchval("SELECT COUNT(*) FROM reminder_settings")
         if count == 0:
             await conn.execute("""
-                INSERT INTO reminder_settings 
-                (id, evening_hour, evening_minute, late_hour, late_minute, 
+                INSERT INTO reminder_settings
+                (id, evening_hour, evening_minute, late_hour, late_minute,
                  report_hour, report_minute, evening_enabled, late_enabled, report_enabled)
                 VALUES (1, 18, 0, 20, 0, 21, 0, TRUE, TRUE, TRUE)
             """)
-        
+
         await conn.execute("CREATE INDEX IF NOT EXISTS idx_worklog_worker_date ON work_log(worker_id, work_date)")
         await conn.execute("CREATE INDEX IF NOT EXISTS idx_worklog_date ON work_log(work_date)")
         await conn.execute("CREATE INDEX IF NOT EXISTS idx_advances_worker_date ON advances(worker_id, advance_date)")
@@ -226,25 +233,25 @@ async def delete_worker(telegram_id: int):
                 'DELETE FROM work_log WHERE worker_id = $1',
                 telegram_id
             )
-            
+
             # 2. Удаляем авансы
             await conn.execute(
                 'DELETE FROM advances WHERE worker_id = $1',
                 telegram_id
             )
-            
+
             # 3. Удаляем штрафы
             await conn.execute(
                 'DELETE FROM penalties WHERE worker_id = $1',
                 telegram_id
             )
-            
+
             # 4. Удаляем привязки к категориям
             await conn.execute(
                 'DELETE FROM worker_categories WHERE worker_id = $1',
                 telegram_id
             )
-            
+
             # 5. Удаляем самого работника
             await conn.execute(
                 'DELETE FROM workers WHERE telegram_id = $1',
@@ -259,32 +266,32 @@ async def get_worker_deletion_info(telegram_id: int) -> dict:
             'SELECT COUNT(*) FROM work_log WHERE worker_id = $1',
             telegram_id
         )
-        
+
         advances_count = await conn.fetchval(
             'SELECT COUNT(*) FROM advances WHERE worker_id = $1',
             telegram_id
         )
-        
+
         penalties_count = await conn.fetchval(
             'SELECT COUNT(*) FROM penalties WHERE worker_id = $1',
             telegram_id
         )
-        
+
         total_earned = await conn.fetchval(
             'SELECT COALESCE(SUM(total), 0) FROM work_log WHERE worker_id = $1',
             telegram_id
         )
-        
+
         total_advances = await conn.fetchval(
             'SELECT COALESCE(SUM(amount), 0) FROM advances WHERE worker_id = $1',
             telegram_id
         )
-        
+
         total_penalties = await conn.fetchval(
             'SELECT COALESCE(SUM(amount), 0) FROM penalties WHERE worker_id = $1',
             telegram_id
         )
-        
+
         return {
             'work_count': work_count,
             'advances_count': advances_count,
@@ -394,7 +401,7 @@ async def delete_price_item_permanently(code: str) -> bool:
             return True
 
 
-async def update_work_item(code: str, new_name: str = None, new_price: float = None, 
+async def update_work_item(code: str, new_name: str = None, new_price: float = None,
                           new_price_type: str = None):
     async with pool.acquire() as conn:
         if new_name:
@@ -414,7 +421,7 @@ async def update_work_item(code: str, new_name: str = None, new_price: float = N
 async def get_work_by_code(code: str):
     async with pool.acquire() as conn:
         row = await conn.fetchrow("""
-            SELECT pl.code, pl.name, pl.price, pl.price_type, 
+            SELECT pl.code, pl.name, pl.price, pl.price_type,
                    pl.category_code, c.name, c.emoji
             FROM price_list pl
             JOIN categories c ON pl.category_code = c.code
@@ -556,7 +563,7 @@ async def get_workers_without_records(target_date=None):
         with_records = await conn.fetch(
             "SELECT DISTINCT worker_id FROM work_log WHERE work_date = $1", target_date)
         with_records_set = {r['worker_id'] for r in with_records}
-        return [(r['telegram_id'], r['name']) for r in all_workers 
+        return [(r['telegram_id'], r['name']) for r in all_workers
                 if r['telegram_id'] not in with_records_set]
 
 
@@ -583,7 +590,7 @@ async def get_monthly_by_days(worker_id: int, year: int = None, month: int = Non
 async def get_today_entries(worker_id: int):
     async with pool.acquire() as conn:
         rows = await conn.fetch("""
-            SELECT wl.id, pl.name, wl.quantity, wl.price_per_unit, wl.total, 
+            SELECT wl.id, pl.name, wl.quantity, wl.price_per_unit, wl.total,
                    wl.created_at::TEXT, pl.price_type
             FROM work_log wl
             JOIN price_list pl ON wl.work_code = pl.code
@@ -719,7 +726,7 @@ async def get_all_workers_balance(year: int = None, month: int = None):
         month = date.today().month
     async with pool.acquire() as conn:
         rows = await conn.fetch("""
-            SELECT 
+            SELECT
                 w.telegram_id, w.name,
                 COALESCE(earn.total_earned, 0) as earned,
                 COALESCE(adv.total_advance, 0) as advances,
@@ -727,7 +734,7 @@ async def get_all_workers_balance(year: int = None, month: int = None):
                 COALESCE(earn.work_days, 0) as work_days
             FROM workers w
             LEFT JOIN (
-                SELECT worker_id, 
+                SELECT worker_id,
                        SUM(total) as total_earned,
                        COUNT(DISTINCT work_date) as work_days
                 FROM work_log
@@ -758,7 +765,7 @@ async def get_worker_full_stats(worker_id: int, year: int = None, month: int = N
         month = date.today().month
     async with pool.acquire() as conn:
         earn_row = await conn.fetchrow("""
-            SELECT 
+            SELECT
                 COALESCE(SUM(wl.total), 0) as earned,
                 COUNT(DISTINCT wl.work_date) as work_days
             FROM work_log wl
@@ -953,6 +960,42 @@ async def update_reminder_settings(**kwargs):
         vals.append(1)
         await conn.execute(
             f"UPDATE reminder_settings SET {sets} WHERE id = ${len(vals)}", *vals)
+
+# ==================== ПЕРЕСЧЁТ ЗАПИСЕЙ ====================
+
+async def recalculate_entries_from_march(work_code: str, new_price: float) -> dict:
+    """
+    Пересчитывает все записи с марта 2025 для указанной работы
+    Возвращает статистику: кол-во обновлённых записей и разницу сумм
+    """
+    async with pool.acquire() as conn:
+        # Получаем все записи с 01.03.2025
+        entries = await conn.fetch("""
+            SELECT id, quantity, price_per_unit, total
+            FROM work_log
+            WHERE work_code = $1 AND work_date >= '2025-03-01'
+        """, work_code)
+        
+        if not entries:
+            return {'count': 0, 'old_total': 0, 'new_total': 0, 'difference': 0}
+        
+        old_total = sum(e['total'] for e in entries)
+        new_total = sum(e['quantity'] * new_price for e in entries)
+        
+        # Обновляем все записи
+        await conn.execute("""
+            UPDATE work_log
+            SET price_per_unit = $1, total = quantity * $1
+            WHERE work_code = $2 AND work_date >= '2025-03-01'
+        """, new_price, work_code)
+        
+        return {
+            'count': len(entries),
+            'old_total': old_total,
+            'new_total': new_total,
+            'difference': new_total - old_total
+        }
+
 
 async def get_worker_entries_by_month(worker_id: int, year: int, month: int):
     """Получает записи работника за конкретный месяц"""

@@ -13,7 +13,7 @@ class WorkEntry(StatesGroup):
 
 
 class ViewEntries(StatesGroup):
-    choosing_month = State()      # НОВОЕ: выбор месяца
+    choosing_month = State()
     choosing_date = State()
     viewing = State()
 
@@ -23,7 +23,6 @@ class WorkerDeleteEntry(StatesGroup):
     confirming = State()
 
 
-# ✅ НОВОЕ: редактирование записи работником
 class WorkerEditEntry(StatesGroup):
     choosing_entry = State()
     choosing_action = State()
@@ -67,6 +66,7 @@ class AdminRemoveCategory(StatesGroup):
 class AdminEditPrice(StatesGroup):
     choosing_item = State()
     entering_new_price = State()
+    confirming_recalculation = State()  # ← НОВОЕ
 
 
 class AdminRenameWorker(StatesGroup):
@@ -76,7 +76,7 @@ class AdminRenameWorker(StatesGroup):
 
 class AdminManageEntries(StatesGroup):
     choosing_worker = State()
-    choosing_month = State()      # ← Добавьте это
+    choosing_month = State()
     viewing_entries = State()
     choosing_action = State()
     entering_new_quantity = State()
@@ -148,12 +148,13 @@ class ReportWorker(StatesGroup):
     choosing_worker = State()
 
 
-# ✅ НОВОЕ: выбор работника для сводки за месяц
 class MonthlySummaryWorker(StatesGroup):
     choosing_worker = State()
 
+
 class MonthlyTotals(StatesGroup):
     select_month = State()
+
 
 # ==================== НАПОМИНАНИЯ ====================
 
