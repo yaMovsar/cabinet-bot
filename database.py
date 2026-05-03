@@ -517,10 +517,11 @@ async def get_daily_total(worker_id: int, target_date=None):
     target_date = parse_date(target_date)
     async with pool.acquire() as conn:
         rows = await conn.fetch("""
-            SELECT work_code, SUM(quantity), price_per_unit, SUM(total)
-            FROM work_log
-            WHERE worker_id = $1 AND work_date = $2
-            GROUP BY work_code, price_per_unit
+            SELECT wl.work_code, SUM(wl.quantity), wl.price_per_unit, SUM(wl.total), pl.price_type
+            FROM work_log wl
+            JOIN price_list pl ON wl.work_code = pl.code
+            WHERE wl.worker_id = $1 AND wl.work_date = $2
+            GROUP BY wl.work_code, wl.price_per_unit, pl.price_type
         """, worker_id, target_date)
         return [tuple(row) for row in rows]
 
@@ -592,13 +593,13 @@ async def get_monthly_by_days(worker_id: int, year: int = None, month: int = Non
     async with pool.acquire() as conn:
         rows = await conn.fetch("""
             SELECT wl.work_date::TEXT, pl.name, SUM(wl.quantity),
-                   wl.price_per_unit, SUM(wl.total)
+                   wl.price_per_unit, SUM(wl.total), pl.price_type
             FROM work_log wl
             JOIN price_list pl ON wl.work_code = pl.code
             WHERE wl.worker_id = $1
               AND EXTRACT(YEAR FROM wl.work_date) = $2
               AND EXTRACT(MONTH FROM wl.work_date) = $3
-            GROUP BY wl.work_date, pl.name, wl.price_per_unit
+            GROUP BY wl.work_date, pl.name, wl.price_per_unit, pl.price_type
             ORDER BY wl.work_date, pl.name
         """, worker_id, year, month)
         return [tuple(row) for row in rows]

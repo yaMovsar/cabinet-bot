@@ -741,8 +741,10 @@ async def show_daily(message: types.Message, state: FSMContext):
     names = {i[0]: i[1] for i in all_items}
     text = f"📊 {today.strftime('%d.%m.%Y')}:\n\n"
     total = 0
-    for code, qty, price, sub in rows:
-        text += f"▪️ {names.get(code, code)}: {int(qty)}шт x {int(price)} руб = {int(sub)} руб\n"
+    for code, qty, price, sub, price_type in rows:
+        unit = "м²" if price_type == "square" else "шт"
+        qty_display = f"{qty:.2f}" if price_type == "square" else str(int(qty))
+        text += f"▪️ {names.get(code, code)}: {qty_display} {unit} x {int(price)} руб = {int(sub)} руб\n"
         total += sub
     text += f"\n💰 Итого за день: {int(total)} руб"
 
@@ -773,7 +775,7 @@ async def show_monthly(message: types.Message, state: FSMContext):
     day_total = 0
     grand_total = 0
     work_days = 0
-    for work_date, name, qty, price, subtotal in rows:
+    for work_date, name, qty, price, subtotal, price_type in rows:
         if work_date != current_date:
             if current_date != "":
                 text += f"   💰 За день: {int(day_total)} руб\n\n"
@@ -781,7 +783,9 @@ async def show_monthly(message: types.Message, state: FSMContext):
             current_date = work_date
             day_total = 0
             work_days += 1
-        text += f"   ▪️ {name} x {int(qty)} = {int(subtotal)} руб\n"
+        unit = "м²" if price_type == "square" else "шт"
+        qty_display = f"{qty:.2f}" if price_type == "square" else str(int(qty))
+        text += f"   ▪️ {name} x {qty_display} {unit} = {int(subtotal)} руб\n"
         day_total += subtotal
         grand_total += subtotal
     if current_date != "":

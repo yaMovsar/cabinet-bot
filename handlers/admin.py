@@ -1052,7 +1052,7 @@ async def edit_category_bonus_threshold(message: types.Message, state: FSMContex
         return
     data = await state.get_data()
     if threshold == 0:
-        await update_category_bonus_settings(data["cat_code"], bonus_threshold=0, bonus_amount=0)
+        await update_category_bonus_settings(data["cat_code"], bonus_threshold=0, bonus_amount=0, bonus_min_earned=0)
         await message.answer(
             f"✅ Премия убрана для {data['cat_emoji']} {data['cat_name']}",
             reply_markup=get_edit_keyboard()
