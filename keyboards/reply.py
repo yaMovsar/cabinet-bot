@@ -30,6 +30,7 @@ def get_admin_keyboard():
          KeyboardButton(text="💾 Бэкап БД")],
         [KeyboardButton(text="⏰ Напоминания"),
          KeyboardButton(text="📂 Справочники")],
+        [KeyboardButton(text="📢 Рассылка")],
         [KeyboardButton(text="🔙 Назад")],
     ]
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)

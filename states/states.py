@@ -166,6 +166,15 @@ class SalaryPayout(StatesGroup):
     choosing_month = State()
 
 
+# ==================== РАССЫЛКА ====================
+
+class AdminBroadcast(StatesGroup):
+    choosing_target = State()
+    choosing_category = State()
+    entering_message = State()
+    confirming = State()
+
+
 # ==================== НАПОМИНАНИЯ ====================
 
 class AdminReminderSettings(StatesGroup):
