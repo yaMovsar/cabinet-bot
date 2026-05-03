@@ -937,8 +937,14 @@ async def edit_category_chosen(callback: types.CallbackQuery, state: FSMContext)
     salary = settings.get('monthly_salary', 0) or 0
     threshold = settings.get('bonus_threshold', 0) or 0
     bonus_amt = settings.get('bonus_amount', 0) or 0
+    bonus_min = settings.get('bonus_min_earned', 0) or 0
     salary_str = f"{int(salary)} руб/мес" if salary > 0 else "не задана"
-    bonus_str = f"+{int(bonus_amt)} за каждые {int(threshold)}" if threshold > 0 else "не задана"
+    if threshold > 0:
+        bonus_str = f"+{int(bonus_amt)} за каждые {int(threshold)}"
+        if bonus_min > 0:
+            bonus_str += f" (от {int(bonus_min)} руб)"
+    else:
+        bonus_str = "не задана"
     buttons = [
         [InlineKeyboardButton(text="✏️ Изменить название", callback_data="ec_act:name")],
         [InlineKeyboardButton(text="🎨 Изменить эмодзи", callback_data="ec_act:emoji")],
@@ -1070,12 +1076,40 @@ async def edit_category_bonus_amount(message: types.Message, state: FSMContext):
         await message.answer("❌ Введите положительное число:")
         return
     data = await state.get_data()
+    await state.update_data(bonus_amount=amount)
     threshold = data["bonus_threshold"]
-    await update_category_bonus_settings(data["cat_code"], bonus_threshold=threshold, bonus_amount=amount)
+    await message.answer(
+        f"🏆 Размер: +{int(amount)} руб за каждые {int(threshold)} руб\n\n"
+        f"С какой минимальной суммы начисляется премия?\n"
+        f"(0 — с первого порога, например введите 20000 чтобы премия шла только от 20 000 руб)"
+    )
+    await state.set_state(AdminEditCategory.entering_bonus_min_earned)
+
+
+@router.message(AdminEditCategory.entering_bonus_min_earned)
+async def edit_category_bonus_min_earned(message: types.Message, state: FSMContext):
+    try:
+        min_earned = float(message.text.replace(",", "."))
+        if min_earned < 0:
+            raise ValueError
+    except ValueError:
+        await message.answer("❌ Введите число (0 или больше):")
+        return
+    data = await state.get_data()
+    threshold = data["bonus_threshold"]
+    amount = data["bonus_amount"]
+    await update_category_bonus_settings(
+        data["cat_code"],
+        bonus_threshold=threshold,
+        bonus_amount=amount,
+        bonus_min_earned=min_earned
+    )
+    min_str = f"от {int(min_earned)} руб" if min_earned > 0 else "с первого порога"
     await message.answer(
         f"✅ Премия настроена!\n"
         f"{data['cat_emoji']} {data['cat_name']}\n"
-        f"▪️ +{int(amount)} руб за каждые {int(threshold)} руб заработка",
+        f"▪️ +{int(amount)} руб за каждые {int(threshold)} руб заработка\n"
+        f"▪️ Начисляется: {min_str}",
         reply_markup=get_edit_keyboard()
     )
     await state.clear()

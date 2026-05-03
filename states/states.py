@@ -91,6 +91,7 @@ class AdminEditCategory(StatesGroup):
     entering_salary = State()
     entering_bonus_threshold = State()
     entering_bonus_amount = State()
+    entering_bonus_min_earned = State()
 
 
 class AdminEditWork(StatesGroup):

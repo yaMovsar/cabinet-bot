@@ -134,6 +134,10 @@ async def init_db():
             ALTER TABLE categories
             ADD COLUMN IF NOT EXISTS bonus_amount REAL DEFAULT 0
         """)
+        await conn.execute("""
+            ALTER TABLE categories
+            ADD COLUMN IF NOT EXISTS bonus_min_earned REAL DEFAULT 0
+        """)
 
         count = await conn.fetchval("SELECT COUNT(*) FROM reminder_settings")
         if count == 0:
@@ -787,7 +791,7 @@ async def get_worker_bonus(worker_id: int, year: int, month: int) -> float:
     """Расчёт премии: floor(заработок_по_категории / порог) × размер"""
     async with pool.acquire() as conn:
         cat_rows = await conn.fetch("""
-            SELECT c.code, c.bonus_threshold, c.bonus_amount
+            SELECT c.code, c.bonus_threshold, c.bonus_amount, c.bonus_min_earned
             FROM worker_categories wc
             JOIN categories c ON wc.category_code = c.code
             WHERE wc.worker_id = $1 AND c.bonus_threshold > 0
@@ -804,7 +808,8 @@ async def get_worker_bonus(worker_id: int, year: int, month: int) -> float:
                   AND EXTRACT(YEAR FROM wl.work_date) = $3
                   AND EXTRACT(MONTH FROM wl.work_date) = $4
             """, worker_id, cat['code'], year, month)
-            if cat_earned > 0:
+            min_earned = cat['bonus_min_earned'] or 0
+            if cat_earned > 0 and cat_earned >= min_earned:
                 steps = int(cat_earned // cat['bonus_threshold'])
                 total_bonus += steps * cat['bonus_amount']
         return total_bonus
@@ -814,7 +819,7 @@ async def get_category_settings(code: str) -> dict:
     """Настройки категории: ставка и премия"""
     async with pool.acquire() as conn:
         row = await conn.fetchrow("""
-            SELECT code, name, emoji, monthly_salary, bonus_threshold, bonus_amount
+            SELECT code, name, emoji, monthly_salary, bonus_threshold, bonus_amount, bonus_min_earned
             FROM categories WHERE code = $1
         """, code)
         if not row:
@@ -824,7 +829,8 @@ async def get_category_settings(code: str) -> dict:
 
 async def update_category_bonus_settings(code: str, monthly_salary: float = None,
                                           bonus_threshold: float = None,
-                                          bonus_amount: float = None):
+                                          bonus_amount: float = None,
+                                          bonus_min_earned: float = None):
     async with pool.acquire() as conn:
         if monthly_salary is not None:
             await conn.execute(
@@ -838,6 +844,10 @@ async def update_category_bonus_settings(code: str, monthly_salary: float = None
             await conn.execute(
                 "UPDATE categories SET bonus_amount = $1 WHERE code = $2",
                 bonus_amount, code)
+        if bonus_min_earned is not None:
+            await conn.execute(
+                "UPDATE categories SET bonus_min_earned = $1 WHERE code = $2",
+                bonus_min_earned, code)
 
 
 async def get_inactive_workers(days: int = 14) -> list:
