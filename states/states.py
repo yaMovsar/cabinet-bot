@@ -1,0 +1,172 @@
+from aiogram.fsm.state import State, StatesGroup
+
+
+# ==================== РАБОТНИК ====================
+
+class WorkEntry(StatesGroup):
+    choosing_date = State()
+    entering_custom_date = State()
+    choosing_category = State()
+    choosing_work = State()
+    entering_quantity = State()
+    confirming_large = State()
+
+
+class ViewEntries(StatesGroup):
+    choosing_month = State()
+    choosing_date = State()
+    viewing = State()
+
+
+class WorkerDeleteEntry(StatesGroup):
+    choosing_entry = State()
+    confirming = State()
+
+
+class WorkerEditEntry(StatesGroup):
+    choosing_entry = State()
+    choosing_action = State()
+    entering_new_quantity = State()
+    confirming_delete = State()
+
+
+# ==================== АДМИН: ДОБАВЛЕНИЕ ====================
+
+class AdminAddCategory(StatesGroup):
+    entering_code = State()
+    entering_name = State()
+    entering_emoji = State()
+
+
+class AdminAddWork(StatesGroup):
+    choosing_category = State()
+    entering_code = State()
+    entering_name = State()
+    choosing_price_type = State()
+    entering_price = State()
+
+
+class AdminAddWorker(StatesGroup):
+    entering_id = State()
+    entering_name = State()
+
+
+# ==================== АДМИН: РЕДАКТИРОВАНИЕ ====================
+
+class AdminAssignCategory(StatesGroup):
+    choosing_worker = State()
+    choosing_category = State()
+
+
+class AdminRemoveCategory(StatesGroup):
+    choosing_worker = State()
+    choosing_category = State()
+
+
+class AdminEditPrice(StatesGroup):
+    choosing_item = State()
+    entering_new_price = State()
+    confirming_recalculation = State()  # ← НОВОЕ
+
+
+class AdminRenameWorker(StatesGroup):
+    choosing_worker = State()
+    entering_name = State()
+
+
+class AdminManageEntries(StatesGroup):
+    choosing_worker = State()
+    choosing_month = State()
+    viewing_entries = State()
+    choosing_action = State()
+    entering_new_quantity = State()
+    confirming_delete = State()
+
+
+class AdminEditCategory(StatesGroup):
+    choosing_category = State()
+    choosing_action = State()
+    entering_new_name = State()
+    entering_new_emoji = State()
+    entering_salary = State()
+    entering_bonus_threshold = State()
+    entering_bonus_amount = State()
+
+
+class AdminEditWork(StatesGroup):
+    choosing_category = State()
+    choosing_work = State()
+    choosing_action = State()
+    entering_new_name = State()
+    choosing_new_price_type = State()
+    entering_new_price = State()
+
+
+# ==================== АДМИН: УДАЛЕНИЕ ====================
+
+class AdminDeleteCategory(StatesGroup):
+    choosing = State()
+    confirming = State()
+
+
+class AdminDeleteWork(StatesGroup):
+    choosing = State()
+    confirming = State()
+
+
+class AdminDeleteWorker(StatesGroup):
+    choosing = State()
+    confirming = State()
+
+
+# ==================== ДЕНЬГИ ====================
+
+class AdminAdvance(StatesGroup):
+    choosing_worker = State()
+    entering_amount = State()
+    entering_comment = State()
+
+
+class AdminDeleteAdvance(StatesGroup):
+    choosing_worker = State()
+    choosing_advance = State()
+    confirming = State()
+
+
+class AdminPenalty(StatesGroup):
+    choosing_worker = State()
+    entering_amount = State()
+    entering_reason = State()
+
+
+class AdminDeletePenalty(StatesGroup):
+    choosing_worker = State()
+    choosing_penalty = State()
+    confirming = State()
+
+
+# ==================== ОТЧЁТЫ ====================
+
+class ReportWorker(StatesGroup):
+    choosing_worker = State()
+
+
+class MonthlySummaryWorker(StatesGroup):
+    choosing_worker = State()
+
+
+class MonthlyTotals(StatesGroup):
+    select_month = State()
+
+
+# ==================== ВЫДАЧА ЗАРПЛАТЫ ====================
+
+class SalaryPayout(StatesGroup):
+    choosing_month = State()
+
+
+# ==================== НАПОМИНАНИЯ ====================
+
+class AdminReminderSettings(StatesGroup):
+    main_menu = State()
+    entering_time = State()
