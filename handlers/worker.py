@@ -685,18 +685,47 @@ async def entries_cancel(callback: types.CallbackQuery, state: FSMContext):
 
 # ==================== МОЙ БАЛАНС ====================
 
+def _month_picker_kb(prefix: str) -> InlineKeyboardMarkup:
+    today = date.today()
+    if today.month == 1:
+        pm, py = 12, today.year - 1
+    else:
+        pm, py = today.month - 1, today.year
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(
+            text=f"📅 {MONTHS_RU[today.month]} {today.year} (текущий)",
+            callback_data=f"{prefix}:{today.year}:{today.month}"
+        )],
+        [InlineKeyboardButton(
+            text=f"📅 {MONTHS_RU[pm]} {py} (прошлый)",
+            callback_data=f"{prefix}:{py}:{pm}"
+        )],
+    ])
+
+
 @router.message(F.text == "💳 Мой баланс")
 async def my_balance(message: types.Message, state: FSMContext):
     await state.clear()
-    uid = message.from_user.id
-    today = date.today()
-    stats = await get_worker_full_stats(uid, today.year, today.month)
-    advances = await get_worker_advances(uid, today.year, today.month)
-    penalties = await get_worker_penalties(uid, today.year, today.month)
+    await message.answer("💳 Мой баланс\n\nВыберите месяц:", reply_markup=_month_picker_kb("bal_m"))
 
-    text = f"💰 Мой баланс — {MONTHS_RU[today.month]} {today.year}\n\n"
+
+@router.callback_query(F.data.startswith("bal_m:"))
+async def balance_month_chosen(callback: types.CallbackQuery, state: FSMContext):
+    _, year, month = callback.data.split(":")
+    year, month = int(year), int(month)
+    uid = callback.from_user.id
+
+    stats = await get_worker_full_stats(uid, year, month)
+    advances = await get_worker_advances(uid, year, month)
+    penalties = await get_worker_penalties(uid, year, month)
+
+    text = f"💰 Мой баланс — {MONTHS_RU[month]} {year}\n\n"
     text += f"💰 Заработано: {int(stats['earned'])} руб\n"
     text += f"📅 Рабочих дней: {stats['work_days']}\n"
+    if stats['fixed_salary'] > 0:
+        text += f"🏢 Ставка: {int(stats['fixed_salary'])} руб\n"
+    if stats['bonus'] > 0:
+        text += f"🏆 Премия: {int(stats['bonus'])} руб\n"
     text += f"💳 Авансы: {int(stats['advances'])} руб\n"
     text += f"⚠️ Штрафы: {int(stats['penalties'])} руб\n"
     text += f"📊 Остаток: {int(stats['balance'])} руб\n"
@@ -721,7 +750,8 @@ async def my_balance(message: types.Message, state: FSMContext):
         avg = stats['earned'] / stats['work_days']
         text += f"\n📈 Среднее в день: {int(avg)} руб"
 
-    await message.answer(text)
+    await callback.message.edit_text(text)
+    await callback.answer()
 
 
 # ==================== ЗАРАБОТОК ====================
@@ -764,13 +794,22 @@ async def show_daily(message: types.Message, state: FSMContext):
 @router.message(F.text == "📊 За месяц")
 async def show_monthly(message: types.Message, state: FSMContext):
     await state.clear()
-    uid = message.from_user.id
-    today = date.today()
-    rows = await get_monthly_by_days(uid, today.year, today.month)
+    await message.answer("📊 За месяц\n\nВыберите месяц:", reply_markup=_month_picker_kb("mon_m"))
+
+
+@router.callback_query(F.data.startswith("mon_m:"))
+async def monthly_month_chosen(callback: types.CallbackQuery, state: FSMContext):
+    _, year, month = callback.data.split(":")
+    year, month = int(year), int(month)
+    uid = callback.from_user.id
+
+    rows = await get_monthly_by_days(uid, year, month)
     if not rows:
-        await message.answer("📭 В этом месяце нет записей.")
+        await callback.message.edit_text(f"📭 В {MONTHS_RU[month]} {year} нет записей.")
+        await callback.answer()
         return
-    text = f"📊 {MONTHS_RU[today.month]} {today.year}:\n\n"
+
+    text = f"📊 {MONTHS_RU[month]} {year}:\n\n"
     current_date = ""
     day_total = 0
     grand_total = 0
@@ -795,7 +834,11 @@ async def show_monthly(message: types.Message, state: FSMContext):
     text += f"📊 Рабочих дней: {work_days}\n"
     text += f"💰 Заработано: {int(grand_total)} руб\n"
 
-    stats = await get_worker_full_stats(uid, today.year, today.month)
+    stats = await get_worker_full_stats(uid, year, month)
+    if stats['fixed_salary'] > 0:
+        text += f"🏢 Ставка: {int(stats['fixed_salary'])} руб\n"
+    if stats['bonus'] > 0:
+        text += f"🏆 Премия: {int(stats['bonus'])} руб\n"
     if stats['advances'] > 0:
         text += f"💳 Авансы: {int(stats['advances'])} руб\n"
     if stats['penalties'] > 0:
@@ -806,7 +849,8 @@ async def show_monthly(message: types.Message, state: FSMContext):
         avg = grand_total / work_days
         text += f"\n📈 Среднее в день: {int(avg)} руб"
 
-    await send_long_message(message, text)
+    await send_long_message(callback.message, text)
+    await callback.answer()
 
 
 # ==================== БЭКАП ====================
