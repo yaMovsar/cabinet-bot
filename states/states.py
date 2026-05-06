@@ -166,6 +166,19 @@ class SalaryPayout(StatesGroup):
     choosing_month = State()
 
 
+# ==================== МЕНЕДЖЕР ====================
+
+class ManagerWorkerReport(StatesGroup):
+    choosing_worker = State()
+    choosing_month = State()
+    choosing_format = State()
+
+
+class ManagerShopReport(StatesGroup):
+    choosing_month = State()
+    choosing_format = State()
+
+
 # ==================== РАССЫЛКА ====================
 
 class AdminBroadcast(StatesGroup):

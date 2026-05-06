@@ -10,7 +10,9 @@ from .states import (
     AdminReminderSettings,
     MonthlyTotals,
     SalaryPayout,
-    AdminBroadcast
+    AdminBroadcast,
+    ManagerWorkerReport,
+    ManagerShopReport
 )
 
 __all__ = [
@@ -25,5 +27,7 @@ __all__ = [
     'AdminReminderSettings',
     'MonthlyTotals',
     'SalaryPayout',
-    'AdminBroadcast'
+    'AdminBroadcast',
+    'ManagerWorkerReport',
+    'ManagerShopReport'
 ]
