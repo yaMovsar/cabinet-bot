@@ -11,7 +11,7 @@ from database import (
     get_worker_categories
 )
 from states import ManagerWorkerReport, ManagerShopReport
-from utils import send_long_message, MONTHS_RU
+from utils import send_long_message, MONTHS_RU, format_salary_block
 from handlers.filters import StaffFilter
 from reports import generate_worker_report, generate_salary_report
 
@@ -134,19 +134,9 @@ async def manager_worker_report_format(callback: types.CallbackQuery, state: FSM
             text += f"   📊 Итого: {int(cat_total)} руб\n"
 
         text += f"\n━━━━━━━━━━━━━━━━━━━\n"
-        text += f"📅 Рабочих дней: {stats['work_days']}\n"
-        text += f"💰 Заработано: {int(stats['earned'])} руб\n"
-        if stats['fixed_salary'] > 0:
-            text += f"🏢 Оклад: {int(stats['fixed_salary'])} руб\n"
-        if stats['bonus'] > 0:
-            text += f"🏆 Премия: {int(stats['bonus'])} руб\n"
-        if stats['advances'] > 0:
-            text += f"💳 Авансы: {int(stats['advances'])} руб\n"
-        if stats['penalties'] > 0:
-            text += f"⚠️ Штрафы: {int(stats['penalties'])} руб\n"
-        text += f"📊 К выплате: {int(stats['balance'])} руб"
+        text += format_salary_block(stats)
         if stats['work_days'] > 0:
-            text += f"\n📈 Среднее в день: {int(stats['earned'] / stats['work_days'])} руб"
+            text += f"\n📈 Среднее в день: {int(stats['earned'] / stats['work_days']):,} руб"
 
         await send_long_message(callback.message, text)
 
@@ -242,17 +232,9 @@ async def manager_shop_report_format(callback: types.CallbackQuery, state: FSMCo
             ce = "".join([c[2] for c in cats]) if cats else ""
             icon = "💰" if stats['balance'] > 0 else "✅"
             text += f"{icon} {ce}{name}\n"
-            text += f"   📅 Дней: {stats['work_days']}\n"
-            text += f"   💰 Заработано: {int(stats['earned'])} руб\n"
-            if stats['fixed_salary'] > 0:
-                text += f"   🏢 Оклад: {int(stats['fixed_salary'])} руб\n"
-            if stats['bonus'] > 0:
-                text += f"   🏆 Премия: {int(stats['bonus'])} руб\n"
-            if stats['advances'] > 0:
-                text += f"   💳 Авансы: {int(stats['advances'])} руб\n"
-            if stats['penalties'] > 0:
-                text += f"   ⚠️ Штрафы: {int(stats['penalties'])} руб\n"
-            text += f"   📊 К выплате: {int(stats['balance'])} руб\n\n"
+            for line in format_salary_block(stats).splitlines():
+                text += f"   {line}\n"
+            text += "\n"
             grand_earned += stats['earned']
             grand_salary += stats['fixed_salary']
             grand_bonus += stats['bonus']

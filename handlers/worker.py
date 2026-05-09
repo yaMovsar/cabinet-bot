@@ -17,7 +17,7 @@ from database import (
 )
 from states import WorkEntry, ViewEntries, WorkerDeleteEntry, WorkerEditEntry
 from keyboards import make_date_picker, make_work_buttons
-from utils import format_date, format_date_short, parse_user_date, send_long_message, MONTHS_RU
+from utils import format_date, format_date_short, parse_user_date, send_long_message, MONTHS_RU, format_salary_block
 from keyboards import get_main_keyboard
 
 router = Router()
@@ -719,21 +719,13 @@ async def balance_month_chosen(callback: types.CallbackQuery, state: FSMContext)
     advances = await get_worker_advances(uid, year, month)
     penalties = await get_worker_penalties(uid, year, month)
 
-    text = f"💰 Мой баланс — {MONTHS_RU[month]} {year}\n\n"
-    text += f"💰 Заработано: {int(stats['earned'])} руб\n"
-    text += f"📅 Рабочих дней: {stats['work_days']}\n"
-    if stats['fixed_salary'] > 0:
-        text += f"🏢 Ставка: {int(stats['fixed_salary'])} руб\n"
-    if stats['bonus'] > 0:
-        text += f"🏆 Премия: {int(stats['bonus'])} руб\n"
-    text += f"💳 Авансы: {int(stats['advances'])} руб\n"
-    text += f"⚠️ Штрафы: {int(stats['penalties'])} руб\n"
-    text += f"📊 Остаток: {int(stats['balance'])} руб\n"
+    text = f"💳 Мой баланс — {MONTHS_RU[month]} {year}\n\n"
+    text += format_salary_block(stats)
 
     if advances:
-        text += f"\n📋 Авансы:\n"
+        text += f"\n\n📋 Авансы:\n"
         for adv_id, amount, comment, adv_date, created in advances:
-            text += f"   ▪️ {format_date(adv_date)}: {int(amount)} руб"
+            text += f"   ▪️ {format_date(adv_date)}: {int(amount):,} руб"
             if comment:
                 text += f" ({comment})"
             text += "\n"
@@ -741,14 +733,14 @@ async def balance_month_chosen(callback: types.CallbackQuery, state: FSMContext)
     if penalties:
         text += f"\n⚠️ Штрафы:\n"
         for pen_id, amount, reason, pen_date, created in penalties:
-            text += f"   ▪️ {format_date(pen_date)}: {int(amount)} руб"
+            text += f"   ▪️ {format_date(pen_date)}: {int(amount):,} руб"
             if reason:
                 text += f" ({reason})"
             text += "\n"
 
     if stats['work_days'] > 0:
         avg = stats['earned'] / stats['work_days']
-        text += f"\n📈 Среднее в день: {int(avg)} руб"
+        text += f"\n\n📈 Среднее в день: {int(avg):,} руб"
 
     await callback.message.edit_text(text)
     await callback.answer()
@@ -830,24 +822,13 @@ async def monthly_month_chosen(callback: types.CallbackQuery, state: FSMContext)
     if current_date != "":
         text += f"   💰 За день: {int(day_total)} руб\n"
 
-    text += f"\n━━━━━━━━━━━━━━━━━━━\n"
-    text += f"📊 Рабочих дней: {work_days}\n"
-    text += f"💰 Заработано: {int(grand_total)} руб\n"
-
     stats = await get_worker_full_stats(uid, year, month)
-    if stats['fixed_salary'] > 0:
-        text += f"🏢 Ставка: {int(stats['fixed_salary'])} руб\n"
-    if stats['bonus'] > 0:
-        text += f"🏆 Премия: {int(stats['bonus'])} руб\n"
-    if stats['advances'] > 0:
-        text += f"💳 Авансы: {int(stats['advances'])} руб\n"
-    if stats['penalties'] > 0:
-        text += f"⚠️ Штрафы: {int(stats['penalties'])} руб\n"
-    text += f"📊 К выплате: {int(stats['balance'])} руб"
+    text += f"\n━━━━━━━━━━━━━━━━━━━\n"
+    text += format_salary_block(stats, work_days=work_days)
 
     if work_days > 0:
         avg = grand_total / work_days
-        text += f"\n📈 Среднее в день: {int(avg)} руб"
+        text += f"\n📈 Среднее в день: {int(avg):,} руб"
 
     await send_long_message(callback.message, text)
     await callback.answer()

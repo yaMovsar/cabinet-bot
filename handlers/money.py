@@ -14,7 +14,7 @@ from database import (
 )
 from states import AdminAdvance, AdminDeleteAdvance, AdminPenalty, AdminDeletePenalty
 from keyboards import get_money_keyboard
-from utils import format_date, format_date_short, send_long_message, MONTHS_RU
+from utils import format_date, format_date_short, send_long_message, MONTHS_RU, format_salary_block
 from handlers.filters import StaffFilter
 
 router = Router()
@@ -407,17 +407,9 @@ async def workers_summary(message: types.Message, state: FSMContext):
     for w in worker_list:
         icon = "💰" if w['balance'] > 0 else ("✅" if w['balance'] == 0 else "⚠️")
         text += f"{icon} {w['name']}\n"
-        text += f"   📅 Дней: {w['work_days']}\n"
-        text += f"   💰 Заработано: {int(w['earned'])} руб\n"
-        if w['fixed_salary'] > 0:
-            text += f"   🏢 Ставка: {int(w['fixed_salary'])} руб\n"
-        if w['bonus'] > 0:
-            text += f"   🏆 Премия: {int(w['bonus'])} руб\n"
-        if w['advances'] > 0:
-            text += f"   💳 Авансы: {int(w['advances'])} руб\n"
-        if w['penalties'] > 0:
-            text += f"   ⚠️ Штрафы: {int(w['penalties'])} руб\n"
-        text += f"   📊 К выплате: {int(w['balance'])} руб\n\n"
+        for line in format_salary_block(w).splitlines():
+            text += f"   {line}\n"
+        text += "\n"
         grand_earned += w['earned']
         grand_salary += w['fixed_salary']
         grand_bonus += w['bonus']

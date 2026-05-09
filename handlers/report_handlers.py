@@ -12,7 +12,7 @@ from database import (
     get_worker_monthly_details, get_worker_full_stats
 )
 from states import ReportWorker, MonthlySummaryWorker, SalaryPayout
-from utils import format_date, format_date_short, send_long_message, MONTHS_RU
+from utils import format_date, format_date_short, send_long_message, MONTHS_RU, format_salary_block
 from handlers.filters import StaffFilter, AdminFilter
 from reports import generate_monthly_report, generate_worker_report, generate_salary_report
 
@@ -171,18 +171,12 @@ async def monthly_summary_worker_chosen(callback: types.CallbackQuery, state: FS
         text += f"   📊 Итого: {int(cat_total)} руб\n"
     
     text += f"\n━━━━━━━━━━━━━━━━━━━\n"
-    text += f"📅 Рабочих дней: {stats['work_days']}\n"
-    text += f"💰 Заработано: {int(stats['earned'])} руб\n"
-    if stats['advances'] > 0:
-        text += f"💳 Авансы: {int(stats['advances'])} руб\n"
-    if stats['penalties'] > 0:
-        text += f"⚠️ Штрафы: {int(stats['penalties'])} руб\n"
-    text += f"📊 К выплате: {int(stats['balance'])} руб"
-    
+    text += format_salary_block(stats)
+
     if stats['work_days'] > 0:
         avg = stats['earned'] / stats['work_days']
-        text += f"\n📈 Среднее в день: {int(avg)} руб"
-    
+        text += f"\n📈 Среднее в день: {int(avg):,} руб"
+
     await send_long_message(callback.message, text)
     await state.clear()
     await callback.answer()

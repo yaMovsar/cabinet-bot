@@ -2,6 +2,35 @@ import logging
 from aiogram import types
 
 
+def format_salary_block(stats: dict, work_days: int = None) -> str:
+    """Форматирует блок расчёта зарплаты: сдельно + оклад + премия → начислено → к выплате"""
+    earned = int(stats['earned'])
+    fixed = int(stats.get('fixed_salary', 0))
+    bonus = int(stats.get('bonus', 0))
+    advances = int(stats.get('advances', 0))
+    penalties = int(stats.get('penalties', 0))
+    total_accrued = earned + fixed + bonus
+    to_pay = int(stats['balance'])
+
+    days = work_days if work_days is not None else stats.get('work_days', 0)
+    text = f"📅 Рабочих дней: {days}\n\n"
+    text += f"💰 Сдельно: {earned:,} руб\n"
+    if fixed > 0:
+        text += f"🏢 Оклад: +{fixed:,} руб\n"
+    if bonus > 0:
+        text += f"🏆 Премия: +{bonus:,} руб\n"
+    if fixed > 0 or bonus > 0:
+        text += f"─────────────────\n"
+        text += f"📋 Начислено: {total_accrued:,} руб\n"
+    if advances > 0:
+        text += f"💳 Авансы: -{advances:,} руб\n"
+    if penalties > 0:
+        text += f"⚠️ Штрафы: -{penalties:,} руб\n"
+    text += f"─────────────────\n"
+    text += f"✅ К выплате: {to_pay:,} руб"
+    return text
+
+
 async def send_long_message(target, text: str, parse_mode=None, max_len=4000):
     """Отправка длинного сообщения частями"""
     if len(text) <= max_len:
