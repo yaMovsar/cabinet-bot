@@ -409,18 +409,19 @@ async def generate_salary_report(year: int, month: int, workers_data: list) -> s
     ws.title = f"Ведомость {MONTHS_RU[month]} {year}"
 
     # ---- Заголовок ----
-    ws.merge_cells('A1:G1')
+    ws.merge_cells('A1:H1')
     ws['A1'] = f"Ведомость зарплаты — {MONTHS_RU[month]} {year}"
     ws['A1'].font = s["header"]
     ws['A1'].alignment = Alignment(horizontal='center')
 
-    ws.merge_cells('A2:G2')
+    ws.merge_cells('A2:H2')
     ws['A2'] = f"Сформирован: {datetime.now().strftime('%d.%m.%Y %H:%M')}"
     ws['A2'].alignment = Alignment(horizontal='center')
 
     # ---- Шапка таблицы ----
-    headers = ["Работник", "Что сделал", "Фикс. ставка", "Премия",
-               "Штрафы", "Авансы", "К выдаче"]
+    # Колонки: Работник | Что сделал | Заработано | Фикс. ставка | Премия | Штрафы | Авансы | К выдаче
+    headers = ["Работник", "Что сделал", "Заработано", "Фикс. ставка",
+               "Премия", "Штрафы", "Авансы", "К выдаче"]
     row = 4
     for col, h in enumerate(headers, 1):
         _cell(ws, row, col, h, s, font=s["th_font"], fill=s["th_fill"], center=True)
@@ -428,26 +429,30 @@ async def generate_salary_report(year: int, month: int, workers_data: list) -> s
 
     # ---- Данные ----
     money_fmt = '#,##0.00 ₽'
-    grand_fixed = grand_bonus = grand_penalties = grand_advances = grand_balance = 0
+    grand_earned = grand_fixed = grand_bonus = grand_penalties = grand_advances = grand_balance = 0
+
+    green_fill = PatternFill(start_color="E2EFDA", end_color="E2EFDA", fill_type="solid")
 
     for w in workers_data:
         _cell(ws, row, 1, w['name'], s)
+
         # "Что сделал" — многострочный текст
         cell = ws.cell(row=row, column=2, value=w['work_summary'])
         cell.border = s["border"]
         cell.alignment = Alignment(wrap_text=True, vertical='top')
 
-        _cell(ws, row, 3, w['fixed_salary'] or None, s, fmt=money_fmt, center=True)
-        _cell(ws, row, 4, w['bonus'] or None, s, fmt=money_fmt, center=True)
-        _cell(ws, row, 5, w['penalties'] or None, s, fmt=money_fmt, center=True)
-        _cell(ws, row, 6, w['advances'] or None, s, fmt=money_fmt, center=True)
+        earned = round(w.get('earned', 0), 2)
+        _cell(ws, row, 3, earned or None, s, fmt=money_fmt, center=True)
+        _cell(ws, row, 4, w['fixed_salary'] or None, s, fmt=money_fmt, center=True)
+        _cell(ws, row, 5, w['bonus'] or None, s, fmt=money_fmt, center=True)
+        _cell(ws, row, 6, w['penalties'] or None, s, fmt=money_fmt, center=True)
+        _cell(ws, row, 7, w['advances'] or None, s, fmt=money_fmt, center=True)
 
         to_pay = round(w['balance'], 2)
-        pay_cell = _cell(ws, row, 7, to_pay, s,
-                         font=Font(bold=True),
-                         fill=PatternFill(start_color="E2EFDA", end_color="E2EFDA", fill_type="solid"),
-                         fmt=money_fmt, center=True)
+        _cell(ws, row, 8, to_pay, s,
+              font=Font(bold=True), fill=green_fill, fmt=money_fmt, center=True)
 
+        grand_earned += earned
         grand_fixed += w['fixed_salary'] or 0
         grand_bonus += w['bonus'] or 0
         grand_penalties += w['penalties'] or 0
@@ -460,14 +465,15 @@ async def generate_salary_report(year: int, month: int, workers_data: list) -> s
     tf_font = s["total_font"]
     _cell(ws, row, 1, "ИТОГО", s, font=tf_font, fill=tf)
     _cell(ws, row, 2, "", s, fill=tf)
-    _cell(ws, row, 3, round(grand_fixed, 2) or None, s, font=tf_font, fill=tf, fmt=money_fmt, center=True)
-    _cell(ws, row, 4, round(grand_bonus, 2) or None, s, font=tf_font, fill=tf, fmt=money_fmt, center=True)
-    _cell(ws, row, 5, round(grand_penalties, 2) or None, s, font=tf_font, fill=tf, fmt=money_fmt, center=True)
-    _cell(ws, row, 6, round(grand_advances, 2) or None, s, font=tf_font, fill=tf, fmt=money_fmt, center=True)
-    _cell(ws, row, 7, round(grand_balance, 2), s, font=tf_font, fill=tf, fmt=money_fmt, center=True)
+    _cell(ws, row, 3, round(grand_earned, 2) or None, s, font=tf_font, fill=tf, fmt=money_fmt, center=True)
+    _cell(ws, row, 4, round(grand_fixed, 2) or None, s, font=tf_font, fill=tf, fmt=money_fmt, center=True)
+    _cell(ws, row, 5, round(grand_bonus, 2) or None, s, font=tf_font, fill=tf, fmt=money_fmt, center=True)
+    _cell(ws, row, 6, round(grand_penalties, 2) or None, s, font=tf_font, fill=tf, fmt=money_fmt, center=True)
+    _cell(ws, row, 7, round(grand_advances, 2) or None, s, font=tf_font, fill=tf, fmt=money_fmt, center=True)
+    _cell(ws, row, 8, round(grand_balance, 2), s, font=tf_font, fill=tf, fmt=money_fmt, center=True)
 
     # ---- Ширина столбцов ----
-    for col, w in zip('ABCDEFG', [22, 45, 16, 14, 14, 14, 16]):
+    for col, w in zip('ABCDEFGH', [22, 45, 16, 16, 14, 14, 14, 16]):
         ws.column_dimensions[col].width = w
 
     filename = f"vedomost_{year}_{month:02d}.xlsx"
