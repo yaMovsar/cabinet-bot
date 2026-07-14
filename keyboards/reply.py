@@ -52,6 +52,7 @@ def get_add_keyboard():
         [KeyboardButton(text="➕ Категория")],
         [KeyboardButton(text="➕ Вид работы")],
         [KeyboardButton(text="👤 Добавить работника")],
+        [KeyboardButton(text="👻 Без Telegram (дед)")],
         [KeyboardButton(text="🔙 В админ-панель")],
     ]
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)

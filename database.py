@@ -39,7 +39,8 @@ async def init_db():
             CREATE TABLE IF NOT EXISTS workers (
                 telegram_id BIGINT PRIMARY KEY,
                 name TEXT NOT NULL,
-                registered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                registered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                is_ghost BOOLEAN NOT NULL DEFAULT FALSE
             )
         """)
         await conn.execute("""
@@ -138,6 +139,10 @@ async def init_db():
             ALTER TABLE categories
             ADD COLUMN IF NOT EXISTS bonus_min_earned REAL DEFAULT 0
         """)
+        await conn.execute("""
+            ALTER TABLE workers
+            ADD COLUMN IF NOT EXISTS is_ghost BOOLEAN NOT NULL DEFAULT FALSE
+        """)
 
         count = await conn.fetchval("SELECT COUNT(*) FROM reminder_settings")
         if count == 0:
@@ -211,6 +216,35 @@ async def add_worker(telegram_id: int, name: str):
         """, telegram_id, name)
 
 
+async def add_ghost_worker(name: str) -> int:
+    """
+    Добавляет "мёртвую душу" — работника без Telegram (например, дед на окладе).
+    ID генерируется автоматически в отрицательном диапазоне, чтобы никогда
+    не пересечься с настоящими Telegram ID (они всегда положительные).
+    Возвращает присвоенный ID.
+    """
+    async with pool.acquire() as conn:
+        min_id = await conn.fetchval("SELECT COALESCE(MIN(telegram_id), 0) FROM workers")
+        new_id = min(int(min_id), 0) - 1
+        await conn.execute("""
+            INSERT INTO workers (telegram_id, name, is_ghost) VALUES ($1, $2, TRUE)
+        """, new_id, name)
+        return new_id
+
+
+async def is_ghost_worker(telegram_id: int) -> bool:
+    async with pool.acquire() as conn:
+        result = await conn.fetchval(
+            "SELECT is_ghost FROM workers WHERE telegram_id = $1", telegram_id)
+        return bool(result)
+
+
+async def get_ghost_worker_ids() -> set:
+    async with pool.acquire() as conn:
+        rows = await conn.fetch("SELECT telegram_id FROM workers WHERE is_ghost = TRUE")
+        return {r['telegram_id'] for r in rows}
+
+
 async def worker_exists(telegram_id: int) -> bool:
     async with pool.acquire() as conn:
         result = await conn.fetchval(
@@ -220,7 +254,11 @@ async def worker_exists(telegram_id: int) -> bool:
 
 async def get_all_workers():
     async with pool.acquire() as conn:
-        rows = await conn.fetch("SELECT telegram_id, name FROM workers ORDER BY name")
+        rows = await conn.fetch("""
+            SELECT telegram_id,
+                   CASE WHEN is_ghost THEN '👻 ' || name ELSE name END AS name
+            FROM workers ORDER BY name
+        """)
         return [tuple(row) for row in rows]
 
 
@@ -577,7 +615,7 @@ async def get_all_workers_monthly_summary(year: int = None, month: int = None):
 async def get_workers_without_records(target_date=None):
     target_date = parse_date(target_date)
     async with pool.acquire() as conn:
-        all_workers = await conn.fetch("SELECT telegram_id, name FROM workers")
+        all_workers = await conn.fetch("SELECT telegram_id, name FROM workers WHERE is_ghost = FALSE")
         with_records = await conn.fetch(
             "SELECT DISTINCT worker_id FROM work_log WHERE work_date = $1", target_date)
         with_records_set = {r['worker_id'] for r in with_records}
@@ -860,6 +898,7 @@ async def get_inactive_workers(days: int = 14) -> list:
                    COALESCE(CURRENT_DATE - MAX(wl.work_date), $1) as days_inactive
             FROM workers w
             LEFT JOIN work_log wl ON w.telegram_id = wl.worker_id
+            WHERE w.is_ghost = FALSE
             GROUP BY w.telegram_id, w.name
             HAVING MAX(wl.work_date) IS NULL
                OR (CURRENT_DATE - MAX(wl.work_date)) >= $1

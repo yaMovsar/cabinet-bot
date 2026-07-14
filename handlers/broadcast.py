@@ -5,7 +5,7 @@ from aiogram import Router, Bot, types, F
 from aiogram.fsm.context import FSMContext
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
-from database import get_all_workers, get_categories, get_workers_in_category, get_worker_full_stats
+from database import get_all_workers, get_categories, get_workers_in_category, get_worker_full_stats, get_ghost_worker_ids
 from states import AdminBroadcast
 from handlers.filters import AdminFilter
 
@@ -100,6 +100,9 @@ async def broadcast_message_entered(message: types.Message, state: FSMContext):
             if stats["balance"] > 0:
                 workers.append((tid, name))
         target_label = f"баланс > 0 ({len(workers)} чел.)"
+
+    ghost_ids = await get_ghost_worker_ids()
+    workers = [(t, n) for t, n in workers if t not in ghost_ids]
 
     count = len(workers)
     if count == 0:
