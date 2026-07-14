@@ -1,6 +1,6 @@
 from .states import (
     WorkEntry, ViewEntries, WorkerDeleteEntry, WorkerEditEntry,
-    AdminAddCategory, AdminAddWork, AdminAddWorker,
+    AdminAddCategory, AdminAddWork, AdminAddWorker, AdminAddGhostWorker,
     AdminAssignCategory, AdminRemoveCategory,
     AdminEditPrice, AdminRenameWorker, AdminManageEntries,
     AdminEditCategory, AdminEditWork,
@@ -17,7 +17,7 @@ from .states import (
 
 __all__ = [
     'WorkEntry', 'ViewEntries', 'WorkerDeleteEntry', 'WorkerEditEntry',
-    'AdminAddCategory', 'AdminAddWork', 'AdminAddWorker',
+    'AdminAddCategory', 'AdminAddWork', 'AdminAddWorker', 'AdminAddGhostWorker',
     'AdminAssignCategory', 'AdminRemoveCategory',
     'AdminEditPrice', 'AdminRenameWorker', 'AdminManageEntries',
     'AdminEditCategory', 'AdminEditWork',

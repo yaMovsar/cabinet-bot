@@ -51,6 +51,10 @@ class AdminAddWorker(StatesGroup):
     entering_name = State()
 
 
+class AdminAddGhostWorker(StatesGroup):
+    entering_name = State()
+
+
 # ==================== АДМИН: РЕДАКТИРОВАНИЕ ====================
 
 class AdminAssignCategory(StatesGroup):

@@ -8,7 +8,7 @@ from config import ADMIN_ID
 from database import (
     add_category, get_categories, delete_category,
     add_price_item, get_price_list, update_price, delete_price_item_permanently,
-    add_worker, get_all_workers, delete_worker, rename_worker,
+    add_worker, add_ghost_worker, get_all_workers, delete_worker, rename_worker,
     assign_category_to_worker, remove_category_from_worker,
     get_worker_categories, get_workers_in_category,
     get_worker_recent_entries, get_entry_by_id,
@@ -20,7 +20,7 @@ from database import (
 )
 
 from states import (
-    AdminAddCategory, AdminAddWork, AdminAddWorker,
+    AdminAddCategory, AdminAddWork, AdminAddWorker, AdminAddGhostWorker,
     AdminAssignCategory, AdminRemoveCategory,
     AdminEditPrice, AdminRenameWorker,
     AdminDeleteCategory, AdminDeleteWork, AdminDeleteWorker,
@@ -185,6 +185,38 @@ async def add_worker_name(message: types.Message, state: FSMContext):
     await message.answer(
         f"✅ {message.text.strip()} ({data['worker_id']})\n"
         f"Назначьте категории: ✏️ Редактировать → 🔗",
+        reply_markup=get_add_keyboard()
+    )
+    await state.clear()
+
+
+# ==================== РАБОТНИК БЕЗ TELEGRAM ("МЁРТВАЯ ДУША") ====================
+
+@router.message(F.text == "👻 Без Telegram (дед)", AdminFilter())
+async def add_ghost_worker_start(message: types.Message, state: FSMContext):
+    await state.clear()
+    await message.answer(
+        "👻 Добавление работника без Telegram (напр. «дед» на окладе).\n\n"
+        "Он не будет получать напоминания и не сможет писать в бота, "
+        "но будет учитываться в зарплате — назначьте ему категорию с окладом "
+        "через ✏️ Редактировать → 💰 Фикс. ставка.\n\n"
+        "Введите имя:"
+    )
+    await state.set_state(AdminAddGhostWorker.entering_name)
+
+
+@router.message(AdminAddGhostWorker.entering_name)
+async def add_ghost_worker_name(message: types.Message, state: FSMContext):
+    name = message.text.strip()
+    if not name:
+        await message.answer("❌ Имя не может быть пустым.")
+        return
+    new_id = await add_ghost_worker(name)
+    await message.answer(
+        f"✅ 👻 {name} добавлен (ID {new_id})\n\n"
+        f"Теперь назначьте ему категорию с окладом:\n"
+        f"✏️ Редактировать → 🔗 Назначить кат., затем в этой категории "
+        f"задайте 💰 Фикс. ставку (✏️ Редактировать категорию).",
         reply_markup=get_add_keyboard()
     )
     await state.clear()
