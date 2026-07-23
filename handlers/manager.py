@@ -185,6 +185,8 @@ async def manager_shop_report_format(callback: types.CallbackQuery, state: FSMCo
             workers_data = []
             for tid, name in workers:
                 stats = await get_worker_full_stats(tid, year, month)
+                if round(stats['balance'], 2) == 0:
+                    continue
                 details = await get_worker_monthly_details(tid, year, month)
                 parts = []
                 for pl_name, c_emoji, c_name, qty, price, total, price_type in details:
@@ -201,6 +203,11 @@ async def manager_shop_report_format(callback: types.CallbackQuery, state: FSMCo
                     'penalties': stats['penalties'],
                     'balance': stats['balance'],
                 })
+            if not workers_data:
+                await callback.message.answer(f"📭 Нет данных за {MONTHS_RU[month]} {year}.")
+                await state.clear()
+                await callback.answer()
+                return
             workers_data.sort(key=lambda x: x['name'])
             fn = await generate_salary_report(year, month, workers_data)
             total_pay = sum(w['balance'] for w in workers_data)

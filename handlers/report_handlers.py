@@ -274,6 +274,11 @@ async def salary_month_chosen(callback: types.CallbackQuery, state: FSMContext):
 
         for tid, name in workers:
             stats = await get_worker_full_stats(tid, year, month)
+
+            # Пропускаем работников с нулевым балансом — в ведомость только тех, с кем есть расчёты
+            if round(stats['balance'], 2) == 0:
+                continue
+
             details = await get_worker_monthly_details(tid, year, month)
 
             # Формируем строку "Что сделал"
@@ -294,6 +299,13 @@ async def salary_month_chosen(callback: types.CallbackQuery, state: FSMContext):
                 'penalties': stats['penalties'],
                 'balance': stats['balance'],
             })
+
+        if not workers_data:
+            await callback.message.answer(
+                f"📭 За {MONTHS_RU[month]} {year} нет работников с ненулевым балансом — выплачивать некому."
+            )
+            await state.clear()
+            return
 
         # Сортируем по имени
         workers_data.sort(key=lambda x: x['name'])

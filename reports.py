@@ -399,82 +399,168 @@ async def generate_worker_report(worker_id, worker_name, year=None, month=None):
 
 async def generate_salary_report(year: int, month: int, workers_data: list) -> str:
     """
-    Ведомость выплаты зарплаты.
+    Ведомость выплаты зарплаты + сверка кассы.
     workers_data: список dict с ключами name, work_summary, fixed_salary,
                   bonus, penalties, advances, balance
+
+    Колонки:
+      A Работник | B Что сделал | C Заработано | D Фикс.ставка | E Премия |
+      F Штрафы | G Авансы | H Надо выплатить (баланс) | I Наличными |
+      J Перевод | K Выплачено (=I+J) | L Остаток (=H-K)
+
+    Графы «Наличными» и «Перевод» заполняются вручную — «Выплачено», «Остаток»,
+    итоги и сверка кассы пересчитываются формулами Excel автоматически.
     """
     s = _styles()
+    money_fmt = '#,##0.00 ₽'
+    green_fill = PatternFill(start_color="E2EFDA", end_color="E2EFDA", fill_type="solid")
+    input_fill = PatternFill(start_color="FFF2CC", end_color="FFF2CC", fill_type="solid")  # жёлтый — «заполнить вручную»
+    warn_fill = PatternFill(start_color="FCE4D6", end_color="FCE4D6", fill_type="solid")   # для недостачи
+    tf = s["total_fill"]
+    tf_font = s["total_font"]
+
     wb = Workbook()
     ws = wb.active
     ws.title = f"Ведомость {MONTHS_RU[month]} {year}"
 
     # ---- Заголовок ----
-    ws.merge_cells('A1:H1')
+    ws.merge_cells('A1:L1')
     ws['A1'] = f"Ведомость зарплаты — {MONTHS_RU[month]} {year}"
     ws['A1'].font = s["header"]
     ws['A1'].alignment = Alignment(horizontal='center')
 
-    ws.merge_cells('A2:H2')
-    ws['A2'] = f"Сформирован: {datetime.now().strftime('%d.%m.%Y %H:%M')}"
+    ws.merge_cells('A2:L2')
+    ws['A2'] = f"Сформирован: {datetime.now().strftime('%d.%m.%Y %H:%M')}  •  жёлтые ячейки — заполнить вручную"
     ws['A2'].alignment = Alignment(horizontal='center')
 
     # ---- Шапка таблицы ----
-    # Колонки: Работник | Что сделал | Заработано | Фикс. ставка | Премия | Штрафы | Авансы | К выдаче
     headers = ["Работник", "Что сделал", "Заработано", "Фикс. ставка",
-               "Премия", "Штрафы", "Авансы", "К выдаче"]
-    row = 4
+               "Премия", "Штрафы", "Авансы", "Надо выплатить\n(баланс)",
+               "Наличными", "Перевод", "Выплачено", "Остаток"]
+    HEAD_ROW = 4
     for col, h in enumerate(headers, 1):
-        _cell(ws, row, col, h, s, font=s["th_font"], fill=s["th_fill"], center=True)
-    row += 1
+        c = _cell(ws, HEAD_ROW, col, h, s, font=s["th_font"], fill=s["th_fill"], center=True)
+        c.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
 
     # ---- Данные ----
-    money_fmt = '#,##0.00 ₽'
-    grand_earned = grand_fixed = grand_bonus = grand_penalties = grand_advances = grand_balance = 0
-
-    green_fill = PatternFill(start_color="E2EFDA", end_color="E2EFDA", fill_type="solid")
-
+    FIRST_ROW = HEAD_ROW + 1
+    row = FIRST_ROW
     for w in workers_data:
         _cell(ws, row, 1, w['name'], s)
 
-        # "Что сделал" — многострочный текст
         cell = ws.cell(row=row, column=2, value=w['work_summary'])
         cell.border = s["border"]
         cell.alignment = Alignment(wrap_text=True, vertical='top')
 
         earned = round(w.get('earned', 0), 2)
         _cell(ws, row, 3, earned or None, s, fmt=money_fmt, center=True)
-        _cell(ws, row, 4, w['fixed_salary'] or None, s, fmt=money_fmt, center=True)
-        _cell(ws, row, 5, w['bonus'] or None, s, fmt=money_fmt, center=True)
-        _cell(ws, row, 6, w['penalties'] or None, s, fmt=money_fmt, center=True)
-        _cell(ws, row, 7, w['advances'] or None, s, fmt=money_fmt, center=True)
+        _cell(ws, row, 4, (w['fixed_salary'] or 0) or None, s, fmt=money_fmt, center=True)
+        _cell(ws, row, 5, (w['bonus'] or 0) or None, s, fmt=money_fmt, center=True)
+        _cell(ws, row, 6, (w['penalties'] or 0) or None, s, fmt=money_fmt, center=True)
+        _cell(ws, row, 7, (w['advances'] or 0) or None, s, fmt=money_fmt, center=True)
 
         to_pay = round(w['balance'], 2)
         _cell(ws, row, 8, to_pay, s,
               font=Font(bold=True), fill=green_fill, fmt=money_fmt, center=True)
 
-        grand_earned += earned
-        grand_fixed += w['fixed_salary'] or 0
-        grand_bonus += w['bonus'] or 0
-        grand_penalties += w['penalties'] or 0
-        grand_advances += w['advances'] or 0
-        grand_balance += w['balance']
+        # Наличными / Перевод — вручную (жёлтые)
+        _cell(ws, row, 9, None, s, fill=input_fill, fmt=money_fmt, center=True)
+        _cell(ws, row, 10, None, s, fill=input_fill, fmt=money_fmt, center=True)
+        # Выплачено = Наличными + Перевод
+        _cell(ws, row, 11, f"=I{row}+J{row}", s, fmt=money_fmt, center=True)
+        # Остаток = Надо выплатить − Выплачено
+        _cell(ws, row, 12, f"=H{row}-K{row}", s, fmt=money_fmt, center=True)
         row += 1
 
+    LAST_ROW = row - 1  # последняя строка с работником
+
     # ---- Итоговая строка ----
-    tf = s["total_fill"]
-    tf_font = s["total_font"]
-    _cell(ws, row, 1, "ИТОГО", s, font=tf_font, fill=tf)
-    _cell(ws, row, 2, "", s, fill=tf)
-    _cell(ws, row, 3, round(grand_earned, 2) or None, s, font=tf_font, fill=tf, fmt=money_fmt, center=True)
-    _cell(ws, row, 4, round(grand_fixed, 2) or None, s, font=tf_font, fill=tf, fmt=money_fmt, center=True)
-    _cell(ws, row, 5, round(grand_bonus, 2) or None, s, font=tf_font, fill=tf, fmt=money_fmt, center=True)
-    _cell(ws, row, 6, round(grand_penalties, 2) or None, s, font=tf_font, fill=tf, fmt=money_fmt, center=True)
-    _cell(ws, row, 7, round(grand_advances, 2) or None, s, font=tf_font, fill=tf, fmt=money_fmt, center=True)
-    _cell(ws, row, 8, round(grand_balance, 2), s, font=tf_font, fill=tf, fmt=money_fmt, center=True)
+    total_row = row
+    _cell(ws, total_row, 1, "ИТОГО", s, font=tf_font, fill=tf)
+    _cell(ws, total_row, 2, "", s, fill=tf)
+    if LAST_ROW >= FIRST_ROW:
+        for col_letter, col_idx in [('C', 3), ('D', 4), ('E', 5), ('F', 6),
+                                    ('G', 7), ('H', 8), ('I', 9), ('J', 10),
+                                    ('K', 11), ('L', 12)]:
+            _cell(ws, total_row, col_idx,
+                  f"=SUM({col_letter}{FIRST_ROW}:{col_letter}{LAST_ROW})",
+                  s, font=tf_font, fill=tf, fmt=money_fmt, center=True)
+    else:
+        for col_idx in range(3, 13):
+            _cell(ws, total_row, col_idx, None, s, font=tf_font, fill=tf, fmt=money_fmt, center=True)
+
+    # ==================== БЛОК РАСХОДОВ ====================
+    exp_header = total_row + 2
+    ws.merge_cells(start_row=exp_header, start_column=1, end_row=exp_header, end_column=7)
+    _cell(ws, exp_header, 1, "РАСХОДЫ (свет, аренда, материалы и т.д.)", s,
+          font=s["th_font"], fill=s["th_fill"])
+    for col_idx in range(2, 8):
+        ws.cell(row=exp_header, column=col_idx).fill = s["th_fill"]
+    _cell(ws, exp_header, 8, "Сумма", s, font=s["th_font"], fill=s["th_fill"], center=True)
+
+    EXP_ROWS = 10
+    exp_first = exp_header + 1
+    exp_last = exp_first + EXP_ROWS - 1
+    for r in range(exp_first, exp_last + 1):
+        ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=7)
+        _cell(ws, r, 1, None, s, fill=input_fill)          # название — вручную
+        for col_idx in range(2, 8):
+            ws.cell(row=r, column=col_idx).fill = input_fill
+            ws.cell(row=r, column=col_idx).border = s["border"]
+        _cell(ws, r, 8, None, s, fill=input_fill, fmt=money_fmt, center=True)  # сумма — вручную
+
+    exp_total = exp_last + 1
+    ws.merge_cells(start_row=exp_total, start_column=1, end_row=exp_total, end_column=7)
+    _cell(ws, exp_total, 1, "Итого расходов", s, font=tf_font, fill=tf)
+    for col_idx in range(2, 8):
+        ws.cell(row=exp_total, column=col_idx).fill = tf
+    _cell(ws, exp_total, 8, f"=SUM(H{exp_first}:H{exp_last})", s,
+          font=tf_font, fill=tf, fmt=money_fmt, center=True)
+
+    # ==================== СВЕРКА КАССЫ ====================
+    k_header = exp_total + 2
+    ws.merge_cells(start_row=k_header, start_column=1, end_row=k_header, end_column=7)
+    _cell(ws, k_header, 1, "СВЕРКА КАССЫ", s, font=s["th_font"], fill=s["th_fill"])
+    for col_idx in range(2, 8):
+        ws.cell(row=k_header, column=col_idx).fill = s["th_fill"]
+    _cell(ws, k_header, 8, "Сумма", s, font=s["th_font"], fill=s["th_fill"], center=True)
+
+    def _kassa_row(r, label, value, *, fill=None, font=None, is_formula=False):
+        ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=7)
+        _cell(ws, r, 1, label, s, font=font, fill=fill)
+        for col_idx in range(2, 8):
+            if fill:
+                ws.cell(row=r, column=col_idx).fill = fill
+            ws.cell(row=r, column=col_idx).border = s["border"]
+        _cell(ws, r, 8, value, s, font=font, fill=fill, fmt=money_fmt, center=True)
+
+    r = k_header + 1
+    got_row = r
+    _kassa_row(r, "Получено от директора", None, fill=input_fill, font=Font(bold=True))  # вручную
+    r += 1
+    salary_row = r
+    _kassa_row(r, "Итого зарплата (надо выплатить)", f"=H{total_row}")
+    r += 1
+    exp_ref_row = r
+    _kassa_row(r, "Итого расходы", f"=H{exp_total}")
+    r += 1
+    need_row = r
+    _kassa_row(r, "Всего к выплате (зарплата + расходы)", f"=H{salary_row}+H{exp_ref_row}",
+               fill=tf, font=tf_font)
+    r += 1
+    _kassa_row(r, "   в т.ч. выдано наличными", f"=I{total_row}")
+    r += 1
+    _kassa_row(r, "   в т.ч. выдано переводом", f"=J{total_row}")
+    r += 1
+    diff_row = r
+    _kassa_row(r, "Разница (получено − всего к выплате)",
+               f"=H{got_row}-H{need_row}", fill=warn_fill, font=Font(bold=True, size=11))
 
     # ---- Ширина столбцов ----
-    for col, w in zip('ABCDEFGH', [22, 45, 16, 16, 14, 14, 14, 16]):
+    for col, w in zip('ABCDEFGHIJKL',
+                      [22, 42, 13, 13, 12, 12, 12, 15, 13, 13, 13, 13]):
         ws.column_dimensions[col].width = w
+    ws.row_dimensions[HEAD_ROW].height = 34
 
     filename = f"vedomost_{year}_{month:02d}.xlsx"
     wb.save(filename)
