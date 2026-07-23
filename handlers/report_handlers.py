@@ -307,8 +307,8 @@ async def salary_month_chosen(callback: types.CallbackQuery, state: FSMContext):
             await state.clear()
             return
 
-        # Сортируем по имени
-        workers_data.sort(key=lambda x: x['name'])
+        # Сортируем по убыванию суммы к выплате (самые большие сверху)
+        workers_data.sort(key=lambda x: x['balance'], reverse=True)
 
         fn = await generate_salary_report(year, month, workers_data)
 

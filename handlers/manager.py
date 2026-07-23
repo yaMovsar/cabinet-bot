@@ -208,7 +208,7 @@ async def manager_shop_report_format(callback: types.CallbackQuery, state: FSMCo
                 await state.clear()
                 await callback.answer()
                 return
-            workers_data.sort(key=lambda x: x['name'])
+            workers_data.sort(key=lambda x: x['balance'], reverse=True)
             fn = await generate_salary_report(year, month, workers_data)
             total_pay = sum(w['balance'] for w in workers_data)
             await callback.message.answer_document(
