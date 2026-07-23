@@ -7,9 +7,10 @@ def format_salary_block(stats: dict, work_days: int = None) -> str:
     earned = int(stats['earned'])
     fixed = int(stats.get('fixed_salary', 0))
     bonus = int(stats.get('bonus', 0))
+    manager = int(stats.get('manager_earned', 0))
     advances = int(stats.get('advances', 0))
     penalties = int(stats.get('penalties', 0))
-    total_accrued = earned + fixed + bonus
+    total_accrued = earned + fixed + bonus + manager
     to_pay = int(stats['balance'])
 
     days = work_days if work_days is not None else stats.get('work_days', 0)
@@ -19,7 +20,9 @@ def format_salary_block(stats: dict, work_days: int = None) -> str:
         text += f"🏢 Оклад: +{fixed:,} руб\n"
     if bonus > 0:
         text += f"🏆 Премия: +{bonus:,} руб\n"
-    if fixed > 0 or bonus > 0:
+    if manager > 0:
+        text += f"👔 Управляющий: +{manager:,} руб\n"
+    if fixed > 0 or bonus > 0 or manager > 0:
         text += f"─────────────────\n"
         text += f"📋 Начислено: {total_accrued:,} руб\n"
     if advances > 0:
@@ -29,6 +32,21 @@ def format_salary_block(stats: dict, work_days: int = None) -> str:
     text += f"─────────────────\n"
     text += f"✅ К выплате: {to_pay:,} руб"
     return text
+
+
+def format_work_summary(details, manager_breakdown=None) -> str:
+    """Строка «Что сделал» для ведомости: сдельные работы + начисления управляющего."""
+    parts = []
+    for pl_name, c_emoji, c_name, qty, price, total, price_type in details:
+        unit = "м²" if price_type == "square" else "шт"
+        qty_str = f"{qty:.1f}" if price_type == "square" else str(int(qty))
+        parts.append(f"{pl_name}: {qty_str} {unit} = {int(total)} руб")
+    if manager_breakdown:
+        for name, emoji, cat_name, price_type, qty, rate, amount in manager_breakdown:
+            unit = "м²" if price_type == "square" else "шт"
+            qty_str = f"{qty:.1f}" if price_type == "square" else str(int(qty))
+            parts.append(f"👔 {name}: {qty_str} {unit} × {int(rate)} = {int(amount)} руб (управляющий)")
+    return "\n".join(parts) if parts else "нет записей"
 
 
 async def send_long_message(target, text: str, parse_mode=None, max_len=4000):

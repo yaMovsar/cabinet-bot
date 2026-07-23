@@ -78,6 +78,12 @@ class AdminRenameWorker(StatesGroup):
     entering_name = State()
 
 
+class AdminManagerRate(StatesGroup):
+    choosing_worker = State()
+    choosing_work = State()
+    entering_rate = State()
+
+
 class AdminManageEntries(StatesGroup):
     choosing_worker = State()
     choosing_month = State()

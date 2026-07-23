@@ -8,10 +8,10 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, FSInputFil
 
 from database import (
     get_all_workers, get_worker_full_stats, get_worker_monthly_details,
-    get_worker_categories
+    get_worker_categories, get_manager_earnings
 )
 from states import ManagerWorkerReport, ManagerShopReport
-from utils import send_long_message, MONTHS_RU, format_salary_block
+from utils import send_long_message, MONTHS_RU, format_salary_block, format_work_summary
 from handlers.filters import StaffFilter
 from reports import generate_worker_report, generate_salary_report
 
@@ -188,15 +188,11 @@ async def manager_shop_report_format(callback: types.CallbackQuery, state: FSMCo
                 if round(stats['balance'], 2) == 0:
                     continue
                 details = await get_worker_monthly_details(tid, year, month)
-                parts = []
-                for pl_name, c_emoji, c_name, qty, price, total, price_type in details:
-                    unit = "м²" if price_type == "square" else "шт"
-                    qty_str = f"{qty:.1f}" if price_type == "square" else str(int(qty))
-                    parts.append(f"{pl_name}: {qty_str} {unit} = {int(total)} руб")
+                mgr = await get_manager_earnings(tid, year, month)
                 workers_data.append({
                     'name': name,
-                    'work_summary': "\n".join(parts) if parts else "нет записей",
-                    'earned': stats['earned'],
+                    'work_summary': format_work_summary(details, mgr['breakdown']),
+                    'earned': stats['earned'] + mgr['total'],
                     'fixed_salary': stats['fixed_salary'],
                     'bonus': stats['bonus'],
                     'advances': stats['advances'],
@@ -232,7 +228,7 @@ async def manager_shop_report_format(callback: types.CallbackQuery, state: FSMCo
 
         for tid, name in workers:
             stats = await get_worker_full_stats(tid, year, month)
-            if stats['earned'] <= 0 and stats['fixed_salary'] <= 0 and stats['advances'] <= 0 and stats['penalties'] <= 0:
+            if stats['earned'] <= 0 and stats['fixed_salary'] <= 0 and stats.get('manager_earned', 0) <= 0 and stats['advances'] <= 0 and stats['penalties'] <= 0:
                 continue
             has_data = True
             cats = await get_worker_categories(tid)

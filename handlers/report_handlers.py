@@ -9,10 +9,13 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, FSInputFil
 from database import (
     get_all_workers, get_all_workers_daily_summary,
     get_admin_monthly_detailed_all, get_worker_categories,
-    get_worker_monthly_details, get_worker_full_stats
+    get_worker_monthly_details, get_worker_full_stats, get_manager_earnings
 )
 from states import ReportWorker, MonthlySummaryWorker, SalaryPayout
-from utils import format_date, format_date_short, send_long_message, MONTHS_RU, format_salary_block
+from utils import (
+    format_date, format_date_short, send_long_message, MONTHS_RU,
+    format_salary_block, format_work_summary
+)
 from handlers.filters import StaffFilter, AdminFilter
 from reports import generate_monthly_report, generate_worker_report, generate_salary_report
 
@@ -280,19 +283,16 @@ async def salary_month_chosen(callback: types.CallbackQuery, state: FSMContext):
                 continue
 
             details = await get_worker_monthly_details(tid, year, month)
+            mgr = await get_manager_earnings(tid, year, month)
 
-            # Формируем строку "Что сделал"
-            parts = []
-            for pl_name, c_emoji, c_name, qty, price, total, price_type in details:
-                unit = "м²" if price_type == "square" else "шт"
-                qty_str = f"{qty:.1f}" if price_type == "square" else str(int(qty))
-                parts.append(f"{pl_name}: {qty_str} {unit} = {int(total)} руб")
-            work_summary = "\n".join(parts) if parts else "нет записей"
+            # Формируем строку "Что сделал" (+ начисления управляющего, если есть)
+            work_summary = format_work_summary(details, mgr['breakdown'])
 
             workers_data.append({
                 'name': name,
                 'work_summary': work_summary,
-                'earned': stats['earned'],
+                # начисления управляющего показываем в графе «Заработано» (баланс их уже учитывает)
+                'earned': stats['earned'] + mgr['total'],
                 'fixed_salary': stats['fixed_salary'],
                 'bonus': stats['bonus'],
                 'advances': stats['advances'],

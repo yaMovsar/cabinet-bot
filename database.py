@@ -114,6 +114,18 @@ async def init_db():
             )
         """)
 
+        # Ставки управляющего: за каждую единицу указанной работы (сделанной ЛЮБЫМ
+        # работником) управляющему начисляется rate. Напр. Адам получает 100₽ за
+        # каждую упаковку двери и 200₽ за каждый шкаф «Айша», упакованные бригадой.
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS manager_rates (
+                manager_id BIGINT NOT NULL REFERENCES workers(telegram_id) ON DELETE CASCADE,
+                work_code TEXT NOT NULL REFERENCES price_list(code) ON DELETE CASCADE,
+                rate REAL NOT NULL,
+                PRIMARY KEY (manager_id, work_code)
+            )
+        """)
+
         # Миграции для существующей БД
         await conn.execute("""
             ALTER TABLE price_list
@@ -158,6 +170,7 @@ async def init_db():
         await conn.execute("CREATE INDEX IF NOT EXISTS idx_advances_worker_date ON advances(worker_id, advance_date)")
         await conn.execute("CREATE INDEX IF NOT EXISTS idx_penalties_worker_date ON penalties(worker_id, penalty_date)")
         await conn.execute("CREATE INDEX IF NOT EXISTS idx_worker_categories ON worker_categories(worker_id, category_code)")
+        await conn.execute("CREATE INDEX IF NOT EXISTS idx_manager_rates ON manager_rates(manager_id)")
 
 
 async def close_db():
@@ -907,6 +920,82 @@ async def get_inactive_workers(days: int = 14) -> list:
                 for r in rows]
 
 
+# ==================== УПРАВЛЯЮЩИЙ ====================
+
+async def set_manager_rate(manager_id: int, work_code: str, rate: float):
+    """Задать/обновить ставку управляющего за единицу работы."""
+    async with pool.acquire() as conn:
+        await conn.execute("""
+            INSERT INTO manager_rates (manager_id, work_code, rate)
+            VALUES ($1, $2, $3)
+            ON CONFLICT (manager_id, work_code) DO UPDATE SET rate = $3
+        """, manager_id, work_code, rate)
+
+
+async def remove_manager_rate(manager_id: int, work_code: str):
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "DELETE FROM manager_rates WHERE manager_id = $1 AND work_code = $2",
+            manager_id, work_code)
+
+
+async def get_manager_rates(manager_id: int):
+    """Ставки управляющего: [(work_code, work_name, rate, cat_emoji, cat_name)]"""
+    async with pool.acquire() as conn:
+        rows = await conn.fetch("""
+            SELECT mr.work_code, pl.name, mr.rate, c.emoji, c.name
+            FROM manager_rates mr
+            JOIN price_list pl ON mr.work_code = pl.code
+            JOIN categories c ON pl.category_code = c.code
+            WHERE mr.manager_id = $1
+            ORDER BY c.name, pl.name
+        """, manager_id)
+        return [tuple(r) for r in rows]
+
+
+async def get_all_manager_ids() -> set:
+    """ID всех работников, у кого есть хоть одна ставка управляющего."""
+    async with pool.acquire() as conn:
+        rows = await conn.fetch("SELECT DISTINCT manager_id FROM manager_rates")
+        return {r['manager_id'] for r in rows}
+
+
+async def get_manager_earnings(manager_id: int, year: int = None, month: int = None):
+    """
+    Начисления управляющему за месяц: по каждой его ставке суммируем количество
+    соответствующей работы, сделанной ВСЕМИ работниками (кроме самого управляющего),
+    и умножаем на ставку.
+    Возвращает {'total': float, 'breakdown': [(work_name, emoji, cat_name, price_type, qty, rate, amount)]}
+    """
+    if year is None:
+        year = date.today().year
+    if month is None:
+        month = date.today().month
+    async with pool.acquire() as conn:
+        has = await conn.fetchval(
+            "SELECT 1 FROM manager_rates WHERE manager_id = $1 LIMIT 1", manager_id)
+        if not has:
+            return {'total': 0.0, 'breakdown': []}
+        rows = await conn.fetch("""
+            SELECT pl.name, c.emoji, c.name AS cat_name, pl.price_type,
+                   SUM(wl.quantity) AS qty, mr.rate,
+                   SUM(wl.quantity) * mr.rate AS amount
+            FROM manager_rates mr
+            JOIN price_list pl ON pl.code = mr.work_code
+            JOIN categories c ON pl.category_code = c.code
+            JOIN work_log wl ON wl.work_code = mr.work_code
+            WHERE mr.manager_id = $1
+              AND wl.worker_id <> mr.manager_id
+              AND EXTRACT(YEAR FROM wl.work_date) = $2
+              AND EXTRACT(MONTH FROM wl.work_date) = $3
+            GROUP BY pl.name, c.emoji, c.name, pl.price_type, mr.rate
+            ORDER BY c.name, pl.name
+        """, manager_id, year, month)
+    total = float(sum(r['amount'] for r in rows) or 0)
+    breakdown = [tuple(r) for r in rows]
+    return {'total': total, 'breakdown': breakdown}
+
+
 async def get_worker_full_stats(worker_id: int, year: int = None, month: int = None):
     if year is None:
         year = date.today().year
@@ -941,6 +1030,7 @@ async def get_worker_full_stats(worker_id: int, year: int = None, month: int = N
 
     fixed_salary = await get_worker_fixed_salary(worker_id)
     bonus = await get_worker_bonus(worker_id, year, month)
+    manager_earned = (await get_manager_earnings(worker_id, year, month))['total']
     earned = float(earn_row['earned'])
     advances = float(adv_row[0])
     penalties = float(pen_row[0])
@@ -950,9 +1040,10 @@ async def get_worker_full_stats(worker_id: int, year: int = None, month: int = N
         'work_days': earn_row['work_days'],
         'fixed_salary': fixed_salary,
         'bonus': bonus,
+        'manager_earned': manager_earned,
         'advances': advances,
         'penalties': penalties,
-        'balance': earned + fixed_salary + bonus - advances - penalties
+        'balance': earned + fixed_salary + bonus + manager_earned - advances - penalties
     }
 
 

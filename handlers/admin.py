@@ -16,13 +16,15 @@ from database import (
     update_category, update_work_item, get_work_by_code,
     get_worker, get_worker_deletion_info, get_worker_entries_by_month,
     recalculate_entries_from_march,
-    get_category_settings, update_category_bonus_settings
+    get_category_settings, update_category_bonus_settings,
+    set_manager_rate, remove_manager_rate,
+    get_manager_rates, get_all_manager_ids
 )
 
 from states import (
     AdminAddCategory, AdminAddWork, AdminAddWorker, AdminAddGhostWorker,
     AdminAssignCategory, AdminRemoveCategory,
-    AdminEditPrice, AdminRenameWorker,
+    AdminEditPrice, AdminRenameWorker, AdminManagerRate,
     AdminDeleteCategory, AdminDeleteWork, AdminDeleteWorker,
     AdminManageEntries,
     AdminEditCategory, AdminEditWork
@@ -379,6 +381,117 @@ async def rmcat_done(callback: types.CallbackQuery, state: FSMContext):
     await callback.message.edit_text("✅ Убрана!")
     await state.clear()
     await callback.answer()
+
+
+# ==================== УПРАВЛЯЮЩИЙ (ставки за работу бригады) ====================
+
+async def _manager_menu_view():
+    """Возвращает (текст, InlineKeyboardMarkup) для меню ставок управляющего."""
+    workers = dict(await get_all_workers())
+    lines = []
+    buttons = []
+    for mid in await get_all_manager_ids():
+        mname = workers.get(mid, f"ID{mid}")
+        for work_code, work_name, rate, emoji, cat_name in await get_manager_rates(mid):
+            lines.append(f"👔 {mname}: {emoji}{work_name} → {int(rate)}₽/ед.")
+            buttons.append([InlineKeyboardButton(
+                text=f"🗑 {mname}: {work_name} ({int(rate)}₽)",
+                callback_data=f"mgrdel:{mid}:{work_code}")])
+    buttons.append([InlineKeyboardButton(text="➕ Добавить ставку", callback_data="mgradd")])
+    text = (
+        "👔 Ставки управляющего\n\n"
+        "Управляющий получает деньги за работу, сделанную ВСЕЙ бригадой: за каждую "
+        "единицу указанной работы ему начисляется его ставка (сверх зарплаты самих "
+        "работников). Начисления попадают в его баланс и ведомость автоматически.\n\n"
+    )
+    text += "\n".join(lines) if lines else "Ставок пока нет."
+    return text, InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+@router.message(F.text == "👔 Управляющий", AdminFilter())
+async def manager_menu(message: types.Message, state: FSMContext):
+    await state.clear()
+    text, markup = await _manager_menu_view()
+    await message.answer(text, reply_markup=markup)
+
+
+@router.callback_query(F.data.startswith("mgrdel:"))
+async def mgr_delete(callback: types.CallbackQuery, state: FSMContext):
+    _, mid, code = callback.data.split(":", 2)
+    await remove_manager_rate(int(mid), code)
+    text, markup = await _manager_menu_view()
+    await callback.message.edit_text(text, reply_markup=markup)
+    await callback.answer("Удалено")
+
+
+@router.callback_query(F.data == "mgradd")
+async def mgr_add_start(callback: types.CallbackQuery, state: FSMContext):
+    workers = await get_all_workers()
+    if not workers:
+        await callback.answer("⚠️ Нет работников", show_alert=True)
+        return
+    buttons = [[InlineKeyboardButton(text=name, callback_data=f"mgrw:{tid}")]
+               for tid, name in workers]
+    buttons.append([InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")])
+    await callback.message.edit_text(
+        "Кто управляющий? Выберите работника:",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+    await state.set_state(AdminManagerRate.choosing_worker)
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("mgrw:"), AdminManagerRate.choosing_worker)
+async def mgr_choose_work(callback: types.CallbackQuery, state: FSMContext):
+    tid = int(callback.data.split(":")[1])
+    await state.update_data(manager_id=tid)
+    items = await get_price_list()
+    if not items:
+        await callback.message.edit_text("⚠️ Сначала добавьте виды работ.")
+        await state.clear()
+        await callback.answer()
+        return
+    buttons = [[InlineKeyboardButton(
+        text=f"{emoji}{name} ({int(price)}₽)", callback_data=f"mgrwk:{code}")]
+        for code, name, price, price_type, cat_code, cat_name, emoji in items]
+    buttons.append([InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")])
+    await callback.message.edit_text(
+        "За какую работу начислять управляющему?",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+    await state.set_state(AdminManagerRate.choosing_work)
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("mgrwk:"), AdminManagerRate.choosing_work)
+async def mgr_enter_rate(callback: types.CallbackQuery, state: FSMContext):
+    code = callback.data.split(":", 1)[1]
+    work = await get_work_by_code(code)
+    if not work:
+        await callback.answer("⚠️ Работа не найдена", show_alert=True)
+        return
+    await state.update_data(work_code=code, work_name=work[1])
+    await callback.message.edit_text(
+        f"Ставка управляющего за 1 ед. «{work[1]}» (₽).\n"
+        f"Введите число, напр. 100:")
+    await state.set_state(AdminManagerRate.entering_rate)
+    await callback.answer()
+
+
+@router.message(AdminManagerRate.entering_rate)
+async def mgr_save_rate(message: types.Message, state: FSMContext):
+    try:
+        rate = float(message.text.strip().replace(",", "."))
+        if rate < 0:
+            raise ValueError
+    except (ValueError, AttributeError):
+        await message.answer("❌ Введите число, напр. 100")
+        return
+    data = await state.get_data()
+    await set_manager_rate(data["manager_id"], data["work_code"], rate)
+    await state.clear()
+    await message.answer(
+        f"✅ Ставка сохранена: {data['work_name']} → {int(rate)}₽/ед.\n\n"
+        f"Начисления появятся у управляющего автоматически по записям бригады.",
+        reply_markup=get_edit_keyboard())
 
 
 # ==================== РАСЦЕНКА ====================

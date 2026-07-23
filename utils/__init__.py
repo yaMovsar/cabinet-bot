@@ -1,8 +1,7 @@
 from .formatters import format_date, format_date_short, parse_user_date, format_money, MONTHS_RU
-from .helpers import send_long_message, safe_edit_text, format_salary_block
-from utils import format_date, send_long_message, MONTHS_RU, format_salary_block
+from .helpers import send_long_message, safe_edit_text, format_salary_block, format_work_summary
 
 __all__ = [
     'format_date', 'format_date_short', 'parse_user_date', 'format_money', 'MONTHS_RU',
-    'send_long_message', 'safe_edit_text', 'format_salary_block'
+    'send_long_message', 'safe_edit_text', 'format_salary_block', 'format_work_summary'
 ]
