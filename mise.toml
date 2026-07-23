@@ -1,0 +1,8 @@
+# Обход бага mise 2026.7.x на сборке Railway:
+#   "No GitHub artifact attestations found for python@3.11.9" → mise install падал.
+# Отключаем проверку attestations, чтобы Python снова ставился.
+[tools]
+python = "3.11.9"
+
+[settings]
+python.github_attestations = false
