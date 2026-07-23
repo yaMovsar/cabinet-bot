@@ -114,18 +114,6 @@ async def init_db():
             )
         """)
 
-        # Ставки управляющего: за каждую единицу указанной работы (сделанной ЛЮБЫМ
-        # работником) управляющему начисляется rate. Напр. Адам получает 100₽ за
-        # каждую упаковку двери и 200₽ за каждый шкаф «Айша», упакованные бригадой.
-        await conn.execute("""
-            CREATE TABLE IF NOT EXISTS manager_rates (
-                manager_id BIGINT NOT NULL REFERENCES workers(telegram_id) ON DELETE CASCADE,
-                work_code TEXT NOT NULL REFERENCES price_list(code) ON DELETE CASCADE,
-                rate REAL NOT NULL,
-                PRIMARY KEY (manager_id, work_code)
-            )
-        """)
-
         # Миграции для существующей БД
         await conn.execute("""
             ALTER TABLE price_list
@@ -155,6 +143,16 @@ async def init_db():
             ALTER TABLE workers
             ADD COLUMN IF NOT EXISTS is_ghost BOOLEAN NOT NULL DEFAULT FALSE
         """)
+        # Управляющий: ставка за единицу работы категории (начисляется управляющему
+        # за упаковку, сделанную бригадой) + флаг «эта категория — роль управляющего».
+        await conn.execute("""
+            ALTER TABLE categories
+            ADD COLUMN IF NOT EXISTS manager_rate REAL DEFAULT 0
+        """)
+        await conn.execute("""
+            ALTER TABLE categories
+            ADD COLUMN IF NOT EXISTS is_manager BOOLEAN NOT NULL DEFAULT FALSE
+        """)
 
         count = await conn.fetchval("SELECT COUNT(*) FROM reminder_settings")
         if count == 0:
@@ -170,7 +168,6 @@ async def init_db():
         await conn.execute("CREATE INDEX IF NOT EXISTS idx_advances_worker_date ON advances(worker_id, advance_date)")
         await conn.execute("CREATE INDEX IF NOT EXISTS idx_penalties_worker_date ON penalties(worker_id, penalty_date)")
         await conn.execute("CREATE INDEX IF NOT EXISTS idx_worker_categories ON worker_categories(worker_id, category_code)")
-        await conn.execute("CREATE INDEX IF NOT EXISTS idx_manager_rates ON manager_rates(manager_id)")
 
 
 async def close_db():
@@ -871,7 +868,8 @@ async def get_category_settings(code: str) -> dict:
     """Настройки категории: ставка и премия"""
     async with pool.acquire() as conn:
         row = await conn.fetchrow("""
-            SELECT code, name, emoji, monthly_salary, bonus_threshold, bonus_amount, bonus_min_earned
+            SELECT code, name, emoji, monthly_salary, bonus_threshold, bonus_amount,
+                   bonus_min_earned, manager_rate, is_manager
             FROM categories WHERE code = $1
         """, code)
         if not row:
@@ -921,78 +919,89 @@ async def get_inactive_workers(days: int = 14) -> list:
 
 
 # ==================== УПРАВЛЯЮЩИЙ ====================
+# Модель: у категории есть ставка управляющего (manager_rate) — сколько получает
+# управляющий за каждую единицу работы этой категории, сделанную бригадой.
+# Работник, назначенный в категорию с флагом is_manager (напр. «Управляющий»),
+# получает сумму этих начислений отдельной строкой в ведомости.
 
-async def set_manager_rate(manager_id: int, work_code: str, rate: float):
-    """Задать/обновить ставку управляющего за единицу работы."""
-    async with pool.acquire() as conn:
-        await conn.execute("""
-            INSERT INTO manager_rates (manager_id, work_code, rate)
-            VALUES ($1, $2, $3)
-            ON CONFLICT (manager_id, work_code) DO UPDATE SET rate = $3
-        """, manager_id, work_code, rate)
-
-
-async def remove_manager_rate(manager_id: int, work_code: str):
+async def set_category_manager_rate(code: str, rate: float):
     async with pool.acquire() as conn:
         await conn.execute(
-            "DELETE FROM manager_rates WHERE manager_id = $1 AND work_code = $2",
-            manager_id, work_code)
+            "UPDATE categories SET manager_rate = $1 WHERE code = $2", rate, code)
 
 
-async def get_manager_rates(manager_id: int):
-    """Ставки управляющего: [(work_code, work_name, rate, cat_emoji, cat_name)]"""
+async def set_category_manager_role(code: str, is_manager: bool):
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE categories SET is_manager = $1 WHERE code = $2", is_manager, code)
+
+
+async def get_manager_rate_categories():
+    """Категории со ставкой управляющего: [(code, name, emoji, rate)]"""
     async with pool.acquire() as conn:
         rows = await conn.fetch("""
-            SELECT mr.work_code, pl.name, mr.rate, c.emoji, c.name
-            FROM manager_rates mr
-            JOIN price_list pl ON mr.work_code = pl.code
-            JOIN categories c ON pl.category_code = c.code
-            WHERE mr.manager_id = $1
-            ORDER BY c.name, pl.name
-        """, manager_id)
+            SELECT code, name, emoji, manager_rate
+            FROM categories WHERE manager_rate > 0 ORDER BY name
+        """)
         return [tuple(r) for r in rows]
 
 
-async def get_all_manager_ids() -> set:
-    """ID всех работников, у кого есть хоть одна ставка управляющего."""
+async def get_manager_role_categories():
+    """Категории-роли управляющего (is_manager=TRUE): [(code, name, emoji)]"""
     async with pool.acquire() as conn:
-        rows = await conn.fetch("SELECT DISTINCT manager_id FROM manager_rates")
-        return {r['manager_id'] for r in rows}
+        rows = await conn.fetch("""
+            SELECT code, name, emoji FROM categories WHERE is_manager = TRUE ORDER BY name
+        """)
+        return [tuple(r) for r in rows]
 
 
-async def get_manager_earnings(manager_id: int, year: int = None, month: int = None):
+async def is_worker_manager(worker_id: int) -> bool:
+    """Назначен ли работник хотя бы в одну категорию-роль управляющего."""
+    async with pool.acquire() as conn:
+        row = await conn.fetchval("""
+            SELECT 1 FROM worker_categories wc
+            JOIN categories c ON wc.category_code = c.code
+            WHERE wc.worker_id = $1 AND c.is_manager = TRUE LIMIT 1
+        """, worker_id)
+        return bool(row)
+
+
+async def get_manager_earnings(worker_id: int, year: int = None, month: int = None):
     """
-    Начисления управляющему за месяц: по каждой его ставке суммируем количество
-    соответствующей работы, сделанной ВСЕМИ работниками (кроме самого управляющего),
-    и умножаем на ставку.
-    Возвращает {'total': float, 'breakdown': [(work_name, emoji, cat_name, price_type, qty, rate, amount)]}
+    Начисления управляющему за месяц. Если работник — управляющий (состоит в
+    категории-роли), суммируем по всем категориям со ставкой (manager_rate):
+    количество работы, сделанной бригадой (кроме самого управляющего) × ставку.
+    Возвращает {'total': float, 'breakdown': [(emoji, cat_name, qty, rate, amount)]}
     """
     if year is None:
         year = date.today().year
     if month is None:
         month = date.today().month
     async with pool.acquire() as conn:
-        has = await conn.fetchval(
-            "SELECT 1 FROM manager_rates WHERE manager_id = $1 LIMIT 1", manager_id)
-        if not has:
+        is_mgr = await conn.fetchval("""
+            SELECT 1 FROM worker_categories wc
+            JOIN categories c ON wc.category_code = c.code
+            WHERE wc.worker_id = $1 AND c.is_manager = TRUE LIMIT 1
+        """, worker_id)
+        if not is_mgr:
             return {'total': 0.0, 'breakdown': []}
         rows = await conn.fetch("""
-            SELECT pl.name, c.emoji, c.name AS cat_name, pl.price_type,
-                   SUM(wl.quantity) AS qty, mr.rate,
-                   SUM(wl.quantity) * mr.rate AS amount
-            FROM manager_rates mr
-            JOIN price_list pl ON pl.code = mr.work_code
+            SELECT c.emoji, c.name AS cat_name, c.manager_rate,
+                   SUM(wl.quantity) AS qty,
+                   SUM(wl.quantity) * c.manager_rate AS amount
+            FROM work_log wl
+            JOIN price_list pl ON wl.work_code = pl.code
             JOIN categories c ON pl.category_code = c.code
-            JOIN work_log wl ON wl.work_code = mr.work_code
-            WHERE mr.manager_id = $1
-              AND wl.worker_id <> mr.manager_id
+            WHERE c.manager_rate > 0
+              AND wl.worker_id <> $1
               AND EXTRACT(YEAR FROM wl.work_date) = $2
               AND EXTRACT(MONTH FROM wl.work_date) = $3
-            GROUP BY pl.name, c.emoji, c.name, pl.price_type, mr.rate
-            ORDER BY c.name, pl.name
-        """, manager_id, year, month)
+            GROUP BY c.emoji, c.name, c.manager_rate
+            ORDER BY c.name
+        """, worker_id, year, month)
     total = float(sum(r['amount'] for r in rows) or 0)
-    breakdown = [tuple(r) for r in rows]
+    breakdown = [(r['emoji'], r['cat_name'], float(r['qty']), float(r['manager_rate']),
+                  float(r['amount'])) for r in rows]
     return {'total': total, 'breakdown': breakdown}
 
 

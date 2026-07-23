@@ -78,12 +78,6 @@ class AdminRenameWorker(StatesGroup):
     entering_name = State()
 
 
-class AdminManagerRate(StatesGroup):
-    choosing_worker = State()
-    choosing_work = State()
-    entering_rate = State()
-
-
 class AdminManageEntries(StatesGroup):
     choosing_worker = State()
     choosing_month = State()
@@ -102,6 +96,7 @@ class AdminEditCategory(StatesGroup):
     entering_bonus_threshold = State()
     entering_bonus_amount = State()
     entering_bonus_min_earned = State()
+    entering_manager_rate = State()
 
 
 class AdminEditWork(StatesGroup):
