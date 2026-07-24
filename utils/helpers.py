@@ -42,9 +42,10 @@ def format_work_summary(details, manager_breakdown=None) -> str:
         qty_str = f"{qty:.1f}" if price_type == "square" else str(int(qty))
         parts.append(f"{pl_name}: {qty_str} {unit} = {int(total)} руб")
     if manager_breakdown:
-        for emoji, cat_name, qty, rate, amount in manager_breakdown:
-            qty_str = f"{qty:.0f}"
-            parts.append(f"👔 {emoji}{cat_name}: {qty_str} ед. × {int(rate)} = {int(amount)} руб")
+        for emoji, work_name, qty, rate, amount, price_type in manager_breakdown:
+            unit = "м²" if price_type == "square" else "шт"
+            qty_str = f"{qty:.1f}" if price_type == "square" else str(int(qty))
+            parts.append(f"👔 {emoji}{work_name}: {qty_str} {unit} × {int(rate)} = {int(amount)} руб")
     return "\n".join(parts) if parts else "нет записей"
 
 

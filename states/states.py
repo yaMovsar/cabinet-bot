@@ -96,7 +96,6 @@ class AdminEditCategory(StatesGroup):
     entering_bonus_threshold = State()
     entering_bonus_amount = State()
     entering_bonus_min_earned = State()
-    entering_manager_rate = State()
 
 
 class AdminEditWork(StatesGroup):
@@ -106,6 +105,7 @@ class AdminEditWork(StatesGroup):
     entering_new_name = State()
     choosing_new_price_type = State()
     entering_new_price = State()
+    entering_manager_rate = State()
 
 
 # ==================== АДМИН: УДАЛЕНИЕ ====================
