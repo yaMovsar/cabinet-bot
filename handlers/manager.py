@@ -8,7 +8,7 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, FSInputFil
 
 from database import (
     get_all_workers, get_worker_full_stats, get_worker_monthly_details,
-    get_worker_categories, get_manager_earnings
+    get_worker_categories
 )
 from states import ManagerWorkerReport, ManagerShopReport
 from utils import send_long_message, MONTHS_RU, format_salary_block, format_work_summary
@@ -188,11 +188,10 @@ async def manager_shop_report_format(callback: types.CallbackQuery, state: FSMCo
                 if round(stats['balance'], 2) == 0:
                     continue
                 details = await get_worker_monthly_details(tid, year, month)
-                mgr = await get_manager_earnings(tid, year, month)
                 workers_data.append({
                     'name': name,
-                    'work_summary': format_work_summary(details, mgr['breakdown']),
-                    'earned': stats['earned'] + mgr['total'],
+                    'work_summary': format_work_summary(details),
+                    'earned': stats['earned'],
                     'fixed_salary': stats['fixed_salary'],
                     'bonus': stats['bonus'],
                     'advances': stats['advances'],
@@ -228,7 +227,7 @@ async def manager_shop_report_format(callback: types.CallbackQuery, state: FSMCo
 
         for tid, name in workers:
             stats = await get_worker_full_stats(tid, year, month)
-            if stats['earned'] <= 0 and stats['fixed_salary'] <= 0 and stats.get('manager_earned', 0) <= 0 and stats['advances'] <= 0 and stats['penalties'] <= 0:
+            if stats['earned'] <= 0 and stats['fixed_salary'] <= 0 and stats['advances'] <= 0 and stats['penalties'] <= 0:
                 continue
             has_data = True
             cats = await get_worker_categories(tid)

@@ -9,7 +9,7 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, FSInputFil
 from database import (
     get_all_workers, get_all_workers_daily_summary,
     get_admin_monthly_detailed_all, get_worker_categories,
-    get_worker_monthly_details, get_worker_full_stats, get_manager_earnings
+    get_worker_monthly_details, get_worker_full_stats
 )
 from states import ReportWorker, MonthlySummaryWorker, SalaryPayout
 from utils import (
@@ -283,16 +283,14 @@ async def salary_month_chosen(callback: types.CallbackQuery, state: FSMContext):
                 continue
 
             details = await get_worker_monthly_details(tid, year, month)
-            mgr = await get_manager_earnings(tid, year, month)
 
-            # Формируем строку "Что сделал" (+ начисления управляющего, если есть)
-            work_summary = format_work_summary(details, mgr['breakdown'])
+            # Формируем строку "Что сделал"
+            work_summary = format_work_summary(details)
 
             workers_data.append({
                 'name': name,
                 'work_summary': work_summary,
-                # начисления управляющего показываем в графе «Заработано» (баланс их уже учитывает)
-                'earned': stats['earned'] + mgr['total'],
+                'earned': stats['earned'],
                 'fixed_salary': stats['fixed_salary'],
                 'bonus': stats['bonus'],
                 'advances': stats['advances'],

@@ -105,7 +105,6 @@ class AdminEditWork(StatesGroup):
     entering_new_name = State()
     choosing_new_price_type = State()
     entering_new_price = State()
-    entering_manager_rate = State()
 
 
 # ==================== АДМИН: УДАЛЕНИЕ ====================

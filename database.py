@@ -143,18 +143,6 @@ async def init_db():
             ALTER TABLE workers
             ADD COLUMN IF NOT EXISTS is_ghost BOOLEAN NOT NULL DEFAULT FALSE
         """)
-        # Управляющий: ставка задаётся на КАЖДЫЙ вид работы (напр. свой тариф за
-        # упаковку каждой модели шкафа) — начисляется управляющему за работу бригады.
-        # Флаг is_manager на категории помечает её как роль «Управляющий».
-        await conn.execute("""
-            ALTER TABLE price_list
-            ADD COLUMN IF NOT EXISTS manager_rate REAL DEFAULT 0
-        """)
-        await conn.execute("""
-            ALTER TABLE categories
-            ADD COLUMN IF NOT EXISTS is_manager BOOLEAN NOT NULL DEFAULT FALSE
-        """)
-
         count = await conn.fetchval("SELECT COUNT(*) FROM reminder_settings")
         if count == 0:
             await conn.execute("""
@@ -487,7 +475,7 @@ async def get_work_by_code(code: str):
     async with pool.acquire() as conn:
         row = await conn.fetchrow("""
             SELECT pl.code, pl.name, pl.price, pl.price_type,
-                   pl.category_code, c.name, c.emoji, pl.manager_rate
+                   pl.category_code, c.name, c.emoji
             FROM price_list pl
             JOIN categories c ON pl.category_code = c.code
             WHERE pl.code = $1
@@ -870,7 +858,7 @@ async def get_category_settings(code: str) -> dict:
     async with pool.acquire() as conn:
         row = await conn.fetchrow("""
             SELECT code, name, emoji, monthly_salary, bonus_threshold, bonus_amount,
-                   bonus_min_earned, is_manager
+                   bonus_min_earned
             FROM categories WHERE code = $1
         """, code)
         if not row:
@@ -919,96 +907,6 @@ async def get_inactive_workers(days: int = 14) -> list:
                 for r in rows]
 
 
-# ==================== УПРАВЛЯЮЩИЙ ====================
-# Модель: у категории есть ставка управляющего (manager_rate) — сколько получает
-# управляющий за каждую единицу работы этой категории, сделанную бригадой.
-# Работник, назначенный в категорию с флагом is_manager (напр. «Управляющий»),
-# получает сумму этих начислений отдельной строкой в ведомости.
-
-async def set_work_manager_rate(code: str, rate: float):
-    """Ставка управляющему за 1 ед. конкретного вида работы."""
-    async with pool.acquire() as conn:
-        await conn.execute(
-            "UPDATE price_list SET manager_rate = $1 WHERE code = $2", rate, code)
-
-
-async def set_category_manager_role(code: str, is_manager: bool):
-    async with pool.acquire() as conn:
-        await conn.execute(
-            "UPDATE categories SET is_manager = $1 WHERE code = $2", is_manager, code)
-
-
-async def get_manager_rate_works():
-    """Виды работ со ставкой управляющего: [(code, name, emoji, rate)]"""
-    async with pool.acquire() as conn:
-        rows = await conn.fetch("""
-            SELECT pl.code, pl.name, c.emoji, pl.manager_rate
-            FROM price_list pl JOIN categories c ON pl.category_code = c.code
-            WHERE pl.manager_rate > 0 AND pl.is_active = TRUE
-            ORDER BY c.name, pl.name
-        """)
-        return [tuple(r) for r in rows]
-
-
-async def get_manager_role_categories():
-    """Категории-роли управляющего (is_manager=TRUE): [(code, name, emoji)]"""
-    async with pool.acquire() as conn:
-        rows = await conn.fetch("""
-            SELECT code, name, emoji FROM categories WHERE is_manager = TRUE ORDER BY name
-        """)
-        return [tuple(r) for r in rows]
-
-
-async def is_worker_manager(worker_id: int) -> bool:
-    """Назначен ли работник хотя бы в одну категорию-роль управляющего."""
-    async with pool.acquire() as conn:
-        row = await conn.fetchval("""
-            SELECT 1 FROM worker_categories wc
-            JOIN categories c ON wc.category_code = c.code
-            WHERE wc.worker_id = $1 AND c.is_manager = TRUE LIMIT 1
-        """, worker_id)
-        return bool(row)
-
-
-async def get_manager_earnings(worker_id: int, year: int = None, month: int = None):
-    """
-    Начисления управляющему за месяц. Если работник — управляющий (состоит в
-    категории-роли), суммируем по каждому виду работы со ставкой (manager_rate):
-    количество, сделанное бригадой (кроме самого управляющего) × ставку этой работы.
-    Возвращает {'total': float, 'breakdown': [(emoji, work_name, qty, rate, amount, price_type)]}
-    """
-    if year is None:
-        year = date.today().year
-    if month is None:
-        month = date.today().month
-    async with pool.acquire() as conn:
-        is_mgr = await conn.fetchval("""
-            SELECT 1 FROM worker_categories wc
-            JOIN categories c ON wc.category_code = c.code
-            WHERE wc.worker_id = $1 AND c.is_manager = TRUE LIMIT 1
-        """, worker_id)
-        if not is_mgr:
-            return {'total': 0.0, 'breakdown': []}
-        rows = await conn.fetch("""
-            SELECT c.emoji, pl.name AS work_name, pl.manager_rate, pl.price_type,
-                   SUM(wl.quantity) AS qty,
-                   SUM(wl.quantity) * pl.manager_rate AS amount
-            FROM work_log wl
-            JOIN price_list pl ON wl.work_code = pl.code
-            JOIN categories c ON pl.category_code = c.code
-            WHERE pl.manager_rate > 0
-              AND wl.worker_id <> $1
-              AND EXTRACT(YEAR FROM wl.work_date) = $2
-              AND EXTRACT(MONTH FROM wl.work_date) = $3
-            GROUP BY c.emoji, pl.name, pl.manager_rate, pl.price_type, c.name
-            ORDER BY c.name, pl.name
-        """, worker_id, year, month)
-    total = float(sum(r['amount'] for r in rows) or 0)
-    breakdown = [(r['emoji'], r['work_name'], float(r['qty']), float(r['manager_rate']),
-                  float(r['amount']), r['price_type']) for r in rows]
-    return {'total': total, 'breakdown': breakdown}
-
-
 async def get_worker_full_stats(worker_id: int, year: int = None, month: int = None):
     if year is None:
         year = date.today().year
@@ -1043,7 +941,6 @@ async def get_worker_full_stats(worker_id: int, year: int = None, month: int = N
 
     fixed_salary = await get_worker_fixed_salary(worker_id)
     bonus = await get_worker_bonus(worker_id, year, month)
-    manager_earned = (await get_manager_earnings(worker_id, year, month))['total']
     earned = float(earn_row['earned'])
     advances = float(adv_row[0])
     penalties = float(pen_row[0])
@@ -1053,10 +950,9 @@ async def get_worker_full_stats(worker_id: int, year: int = None, month: int = N
         'work_days': earn_row['work_days'],
         'fixed_salary': fixed_salary,
         'bonus': bonus,
-        'manager_earned': manager_earned,
         'advances': advances,
         'penalties': penalties,
-        'balance': earned + fixed_salary + bonus + manager_earned - advances - penalties
+        'balance': earned + fixed_salary + bonus - advances - penalties
     }
 
 

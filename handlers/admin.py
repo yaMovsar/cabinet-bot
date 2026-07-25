@@ -16,8 +16,7 @@ from database import (
     update_category, update_work_item, get_work_by_code,
     get_worker, get_worker_deletion_info, get_worker_entries_by_month,
     recalculate_entries_from_march,
-    get_category_settings, update_category_bonus_settings,
-    set_work_manager_rate, set_category_manager_role
+    get_category_settings, update_category_bonus_settings
 )
 
 from states import (
@@ -971,7 +970,6 @@ async def edit_category_chosen(callback: types.CallbackQuery, state: FSMContext)
     threshold = settings.get('bonus_threshold', 0) or 0
     bonus_amt = settings.get('bonus_amount', 0) or 0
     bonus_min = settings.get('bonus_min_earned', 0) or 0
-    is_manager = settings.get('is_manager', False)
     salary_str = f"{int(salary)} руб/мес" if salary > 0 else "не задана"
     if threshold > 0:
         bonus_str = f"+{int(bonus_amt)} за каждые {int(threshold)}"
@@ -979,13 +977,11 @@ async def edit_category_chosen(callback: types.CallbackQuery, state: FSMContext)
             bonus_str += f" (от {int(bonus_min)} руб)"
     else:
         bonus_str = "не задана"
-    role_str = "✅ вкл" if is_manager else "⬜ выкл"
     buttons = [
         [InlineKeyboardButton(text="✏️ Изменить название", callback_data="ec_act:name")],
         [InlineKeyboardButton(text="🎨 Изменить эмодзи", callback_data="ec_act:emoji")],
         [InlineKeyboardButton(text=f"💰 Фикс. ставка ({salary_str})", callback_data="ec_act:salary")],
         [InlineKeyboardButton(text=f"🏆 Премия ({bonus_str})", callback_data="ec_act:bonus")],
-        [InlineKeyboardButton(text=f"👑 Роль «Управляющий» ({role_str})", callback_data="ec_act:mgrrole")],
         [InlineKeyboardButton(text="🔙 Назад", callback_data="ec_act:back")]
     ]
     await callback.message.edit_text(
@@ -1028,20 +1024,6 @@ async def edit_category_action(callback: types.CallbackQuery, state: FSMContext)
             f"0 — убрать премию:"
         )
         await state.set_state(AdminEditCategory.entering_bonus_threshold)
-    elif action == "mgrrole":
-        settings = await get_category_settings(data['cat_code'])
-        new_flag = not bool(settings.get('is_manager'))
-        await set_category_manager_role(data['cat_code'], new_flag)
-        if new_flag:
-            text = (
-                f"✅ {data['cat_emoji']} {data['cat_name']} — теперь роль «Управляющий».\n\n"
-                f"Все работники этой категории получат отдельной строкой начисления "
-                f"по категориям со ставкой управляющего (за работу бригады)."
-            )
-        else:
-            text = f"⬜ {data['cat_emoji']} {data['cat_name']} — роль «Управляющий» выключена."
-        await callback.message.edit_text(text)
-        await state.clear()
     elif action == "back":
         await callback.message.edit_text("❌ Отменено.")
         await state.clear()
@@ -1268,23 +1250,19 @@ async def edit_work_chosen(callback: types.CallbackQuery, state: FSMContext):
         await callback.answer("Не найдена", show_alert=True)
         await state.clear()
         return
-    code, name, price, price_type, cat_code, cat_name, cat_emoji, mgr_rate = work_info
-    mgr_rate = mgr_rate or 0
+    code, name, price, price_type, cat_code, cat_name, cat_emoji = work_info
     await state.update_data(work_code=code, work_name=name, work_price=price, work_price_type=price_type)
     unit_label = "м²" if price_type == "square" else "шт"
-    mgr_str = f"{int(mgr_rate)} ₽/{unit_label}" if mgr_rate > 0 else "не задана"
     buttons = [
         [InlineKeyboardButton(text="✏️ Изменить название", callback_data="ew_act:name")],
         [InlineKeyboardButton(text="💰 Изменить цену", callback_data="ew_act:price")],
         [InlineKeyboardButton(text="📐 Изменить тип оплаты", callback_data="ew_act:type")],
-        [InlineKeyboardButton(text=f"👔 Ставка управляющему ({mgr_str})", callback_data="ew_act:mgrrate")],
         [InlineKeyboardButton(text="🔙 Назад", callback_data="ew_act:back")]
     ]
     await callback.message.edit_text(
         f"Работа: {name}\nКатегория: {cat_emoji} {cat_name}\n"
         f"Цена: {int(price)} руб/{unit_label}\n"
-        f"Тип: {'За м²' if price_type == 'square' else 'За штуку'}\n"
-        f"👔 Управляющему: {mgr_str}\n\nЧто изменить?",
+        f"Тип: {'За м²' if price_type == 'square' else 'За штуку'}\n\nЧто изменить?",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
     )
     await state.set_state(AdminEditWork.choosing_action)
@@ -1314,39 +1292,10 @@ async def edit_work_action(callback: types.CallbackQuery, state: FSMContext):
             reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
         )
         await state.set_state(AdminEditWork.choosing_new_price_type)
-    elif action == "mgrrate":
-        unit_label = "м²" if data["work_price_type"] == "square" else "шт"
-        await callback.message.edit_text(
-            f"👔 Ставка управляющему за 1 {unit_label} работы «{data['work_name']}».\n\n"
-            f"Управляющий получит эту сумму за каждую единицу этой работы, "
-            f"сделанную бригадой.\n"
-            f"Введите сумму (0 — убрать):"
-        )
-        await state.set_state(AdminEditWork.entering_manager_rate)
     elif action == "back":
         await callback.message.edit_text("❌ Отменено.")
         await state.clear()
     await callback.answer()
-
-
-@router.message(AdminEditWork.entering_manager_rate)
-async def edit_work_manager_rate(message: types.Message, state: FSMContext):
-    try:
-        rate = float(message.text.replace(",", "."))
-        if rate < 0:
-            raise ValueError
-    except ValueError:
-        await message.answer("❌ Введите число (0 или больше):")
-        return
-    data = await state.get_data()
-    await set_work_manager_rate(data["work_code"], rate)
-    if rate > 0:
-        text = (f"✅ Ставка управляющему: «{data['work_name']}» → {int(rate)} ₽/ед.\n\n"
-                f"Начислится управляющему автоматически по работе бригады.")
-    else:
-        text = f"✅ Ставка управляющему убрана для «{data['work_name']}»"
-    await message.answer(text, reply_markup=get_edit_keyboard())
-    await state.clear()
 
 
 @router.message(AdminEditWork.entering_new_name)
