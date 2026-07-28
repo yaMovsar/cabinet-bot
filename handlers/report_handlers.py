@@ -87,13 +87,15 @@ async def summary_month_choose_worker(message: types.Message, state: FSMContext)
 
 @router.callback_query(F.data.startswith("msw:"), MonthlySummaryWorker.choosing_worker)
 async def monthly_summary_worker_chosen(callback: types.CallbackQuery, state: FSMContext):
+    # Отвечаем сразу: сводка считается дольше, чем живёт callback query
+    await callback.answer()
+
     value = callback.data.split(":")[1]
     today = date.today()
-    
+
     if value == "cancel":
         await callback.message.edit_text("❌ Отменено.")
         await state.clear()
-        await callback.answer()
         return
     
     if value == "all":
@@ -128,7 +130,6 @@ async def monthly_summary_worker_chosen(callback: types.CallbackQuery, state: FS
         
         await send_long_message(callback.message, text)
         await state.clear()
-        await callback.answer()
         return
     
     # Детальная сводка по конкретному работнику
@@ -148,7 +149,6 @@ async def monthly_summary_worker_chosen(callback: types.CallbackQuery, state: FS
         text = f"📭 {ce}{worker_name} — нет записей за {MONTHS_RU[today.month]} {today.year}"
         await callback.message.edit_text(text)
         await state.clear()
-        await callback.answer()
         return
     
     text = f"📊 {ce}{worker_name}\n"
@@ -182,7 +182,6 @@ async def monthly_summary_worker_chosen(callback: types.CallbackQuery, state: FS
 
     await send_long_message(callback.message, text)
     await state.clear()
-    await callback.answer()
 
 
 @router.message(F.text == "📥 Отчёт месяц", StaffFilter())
@@ -213,6 +212,9 @@ async def report_worker_start(message: types.Message, state: FSMContext):
 
 @router.callback_query(F.data.startswith("rw:"), ReportWorker.choosing_worker)
 async def report_worker_gen(callback: types.CallbackQuery, state: FSMContext):
+    # Отвечаем сразу: генерация Excel дольше, чем живёт callback query
+    await callback.answer()
+
     wid = int(callback.data.split(":")[1])
     workers = await get_all_workers()
     name = next((n for t, n in workers if t == wid), "Работник")
@@ -226,7 +228,6 @@ async def report_worker_gen(callback: types.CallbackQuery, state: FSMContext):
         logging.exception(f"Report error: {e}")
         await callback.message.answer(f"❌ Ошибка: {e}")
     await state.clear()
-    await callback.answer()
 
 
 # ==================== ВЫДАЧА ЗАРПЛАТЫ ====================
@@ -266,6 +267,10 @@ async def salary_cancel(callback: types.CallbackQuery, state: FSMContext):
 
 @router.callback_query(F.data.startswith("sal_month:"), SalaryPayout.choosing_month)
 async def salary_month_chosen(callback: types.CallbackQuery, state: FSMContext):
+    # Отвечаем сразу: ведомость по всем работникам считается дольше,
+    # чем живёт callback query — иначе финальный answer() падает с "query is too old"
+    await callback.answer()
+
     _, year, month = callback.data.split(":")
     year, month = int(year), int(month)
 
@@ -329,4 +334,3 @@ async def salary_month_chosen(callback: types.CallbackQuery, state: FSMContext):
         await callback.message.answer(f"❌ Ошибка: {e}")
 
     await state.clear()
-    await callback.answer()

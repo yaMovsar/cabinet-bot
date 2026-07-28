@@ -132,11 +132,14 @@ async def broadcast_message_entered(message: types.Message, state: FSMContext):
 
 @router.callback_query(F.data.startswith("bc_confirm:"), AdminBroadcast.confirming)
 async def broadcast_confirm(callback: types.CallbackQuery, state: FSMContext, bot: Bot):
+    # Отвечаем сразу: рассылка по всем работникам идёт дольше,
+    # чем живёт callback query
+    await callback.answer()
+
     action = callback.data.split(":")[1]
     if action == "no":
         await callback.message.edit_text("❌ Рассылка отменена.")
         await state.clear()
-        await callback.answer()
         return
 
     data = await state.get_data()
@@ -161,4 +164,3 @@ async def broadcast_confirm(callback: types.CallbackQuery, state: FSMContext, bo
     await callback.message.answer(result)
 
     await state.clear()
-    await callback.answer()

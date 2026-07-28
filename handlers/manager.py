@@ -85,6 +85,9 @@ async def manager_worker_month_chosen(callback: types.CallbackQuery, state: FSMC
 
 @router.callback_query(F.data.startswith("mgr_wr_fmt:"), ManagerWorkerReport.choosing_format)
 async def manager_worker_report_format(callback: types.CallbackQuery, state: FSMContext):
+    # Отвечаем сразу: формирование отчёта дольше, чем живёт callback query
+    await callback.answer()
+
     fmt = callback.data.split(":")[1]
     data = await state.get_data()
     wid, wname, year, month = data["worker_id"], data["worker_name"], data["year"], data["month"]
@@ -113,7 +116,6 @@ async def manager_worker_report_format(callback: types.CallbackQuery, state: FSM
                 f"📭 {ce}{wname} — нет записей за {MONTHS_RU[month]} {year}"
             )
             await state.clear()
-            await callback.answer()
             return
 
         text = f"📊 {ce}{wname}\n📅 {MONTHS_RU[month]} {year}\n\n"
@@ -141,7 +143,6 @@ async def manager_worker_report_format(callback: types.CallbackQuery, state: FSM
         await send_long_message(callback.message, text)
 
     await state.clear()
-    await callback.answer()
 
 
 # ==================== ОТЧЁТ ПО ЦЕХУ ====================
@@ -172,6 +173,9 @@ async def manager_shop_month_chosen(callback: types.CallbackQuery, state: FSMCon
 
 @router.callback_query(F.data.startswith("mgr_sh_fmt:"), ManagerShopReport.choosing_format)
 async def manager_shop_report_format(callback: types.CallbackQuery, state: FSMContext):
+    # Отвечаем сразу: отчёт по цеху считается дольше, чем живёт callback query
+    await callback.answer()
+
     fmt = callback.data.split(":")[1]
     data = await state.get_data()
     year, month = data["year"], data["month"]
@@ -201,7 +205,6 @@ async def manager_shop_report_format(callback: types.CallbackQuery, state: FSMCo
             if not workers_data:
                 await callback.message.answer(f"📭 Нет данных за {MONTHS_RU[month]} {year}.")
                 await state.clear()
-                await callback.answer()
                 return
             workers_data.sort(key=lambda x: x['balance'], reverse=True)
             fn = await generate_salary_report(year, month, workers_data)
@@ -247,7 +250,6 @@ async def manager_shop_report_format(callback: types.CallbackQuery, state: FSMCo
         if not has_data:
             await callback.message.answer(f"📭 Нет данных за {MONTHS_RU[month]} {year}.")
             await state.clear()
-            await callback.answer()
             return
 
         text += "━━━━━━━━━━━━━━━━━━━\n"
@@ -265,7 +267,6 @@ async def manager_shop_report_format(callback: types.CallbackQuery, state: FSMCo
         await send_long_message(callback.message, text)
 
     await state.clear()
-    await callback.answer()
 
 
 @router.callback_query(F.data == "mgr_cancel")
