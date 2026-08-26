@@ -61,6 +61,37 @@ def can_edit_entry(created_at_str, user_id, work_date=None) -> bool:
         return True
 
 
+async def _session_lost(message: types.Message, state: FSMContext) -> None:
+    """Данные шага потеряны — просим начать запись заново"""
+    logging.warning(f"FSM данные потеряны, user={message.from_user.id}")
+    await state.clear()
+    await message.answer(
+        "⚠️ Сессия сброшена (бот перезапускался).\n\n"
+        "Нажмите «📝 Записать работу» и начните заново.",
+        reply_markup=get_main_keyboard(message.from_user.id)
+    )
+
+
+async def _restart_date_step(callback: types.CallbackQuery, state: FSMContext) -> None:
+    """Сессия слетела (рестарт бота или нажата старая кнопка) — начинаем с выбора даты"""
+    logging.warning(f"work_date потерян в FSM, user={callback.from_user.id}, data={callback.data}")
+    await state.clear()
+    try:
+        await callback.message.edit_text(
+            "⚠️ Сессия сброшена (бот перезапускался).\n\n"
+            "📅 За какой день записать работу?",
+            reply_markup=make_date_picker("wdate", "cancel")
+        )
+    except Exception:
+        await callback.message.answer(
+            "⚠️ Сессия сброшена (бот перезапускался).\n\n"
+            "📅 За какой день записать работу?",
+            reply_markup=make_date_picker("wdate", "cancel")
+        )
+    await state.set_state(WorkEntry.choosing_date)
+    await callback.answer()
+
+
 def _no_edit_reason(entry) -> str:
     if not entry:
         return "❌ Запись не найдена"
@@ -209,6 +240,9 @@ async def work_category_chosen(callback: types.CallbackQuery, state: FSMContext)
     cats = await get_worker_categories(callback.from_user.id)
     cat_info = next(((n, e) for c, n, e in cats if c == cat_code), ("", "📦"))
     data = await state.get_data()
+    if not data.get("work_date"):
+        await _restart_date_step(callback, state)
+        return
     buttons = make_work_buttons(cat_items)
     buttons.append([InlineKeyboardButton(text="🔙 К категориям", callback_data="wcat_back")])
     buttons.append([InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")])
@@ -226,6 +260,9 @@ async def work_back_to_categories(callback: types.CallbackQuery, state: FSMConte
     items = await get_price_list_for_worker(callback.from_user.id)
     worker_cats = await get_worker_categories(callback.from_user.id)
     data = await state.get_data()
+    if not data.get("work_date"):
+        await _restart_date_step(callback, state)
+        return
     buttons = []
     for cat_code, cat_name, cat_emoji in worker_cats:
         count = len([i for i in items if i[3] == cat_code])
@@ -252,6 +289,11 @@ async def work_chosen(callback: types.CallbackQuery, state: FSMContext):
         await callback.answer("Не найдено", show_alert=True)
         return
 
+    data = await state.get_data()
+    if not data.get("work_date"):
+        await _restart_date_step(callback, state)
+        return
+
     price_type = info[4]
     await state.update_data(work_info={
         "code": info[0],
@@ -259,8 +301,6 @@ async def work_chosen(callback: types.CallbackQuery, state: FSMContext):
         "price": info[2],
         "price_type": price_type
     })
-
-    data = await state.get_data()
 
     if price_type == SIDE_JOB_TYPE:
         prompt = f"📅 Дата: {format_date(data['work_date'])}\n" \
@@ -280,7 +320,10 @@ async def work_chosen(callback: types.CallbackQuery, state: FSMContext):
 @router.message(WorkEntry.entering_quantity)
 async def quantity_entered(message: types.Message, state: FSMContext):
     data = await state.get_data()
-    info = data["work_info"]
+    info = data.get("work_info")
+    if not info or not data.get("work_date"):
+        await _session_lost(message, state)
+        return
     price_type = info.get("price_type", "unit")
 
     try:
@@ -345,7 +388,10 @@ async def side_job_comment_entered(message: types.Message, state: FSMContext):
     comment = comment[:200]
 
     data = await state.get_data()
-    qty = data["quantity"]
+    qty = data.get("quantity")
+    if qty is None or not data.get("work_info"):
+        await _session_lost(message, state)
+        return
     await state.update_data(comment=comment)
 
     if qty > 10000:
@@ -372,12 +418,18 @@ async def confirm_large_entry(callback: types.CallbackQuery, state: FSMContext):
     action = callback.data.split(":")[1]
     if action == "yes":
         data = await state.get_data()
-        qty = data["quantity"]
+        qty = data.get("quantity")
+        if qty is None or not data.get("work_info"):
+            await _restart_date_step(callback, state)
+            return
         await callback.message.delete()
         await save_work_entry(callback.message, state, qty, user=callback.from_user)
     elif action == "edit":
         data = await state.get_data()
-        info = data["work_info"]
+        info = data.get("work_info")
+        if not info:
+            await _restart_date_step(callback, state)
+            return
         price_type = info.get("price_type", "unit")
 
         if price_type == SIDE_JOB_TYPE:
@@ -398,7 +450,10 @@ async def save_work_entry(message, state, qty, user=None):
         user = message.from_user
 
     data = await state.get_data()
-    info = data["work_info"]
+    info = data.get("work_info")
+    if not info:
+        await _session_lost(message, state)
+        return
     work_date = to_date_str(data.get("work_date", date.today().isoformat()))
     price_type = info.get("price_type", "unit")
     comment = data.get("comment", "") if price_type == SIDE_JOB_TYPE else ""
