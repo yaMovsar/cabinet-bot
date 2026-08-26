@@ -5,27 +5,38 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 def make_date_picker(callback_prefix: str, cancel_callback: str = "cancel"):
     today = date.today()
     yesterday = today - timedelta(days=1)
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(
-            text=f"📅 Сегодня ({today.strftime('%d.%m')})",
-            callback_data=f"{callback_prefix}:{today.isoformat()}"
-        )],
-        [InlineKeyboardButton(
+    rows = [[InlineKeyboardButton(
+        text=f"📅 Сегодня ({today.strftime('%d.%m')})",
+        callback_data=f"{callback_prefix}:{today.isoformat()}"
+    )]]
+    # прошлый месяц закрыт — «вчера» показываем только внутри текущего месяца
+    if yesterday.month == today.month:
+        rows.append([InlineKeyboardButton(
             text=f"📅 Вчера ({yesterday.strftime('%d.%m')})",
             callback_data=f"{callback_prefix}:{yesterday.isoformat()}"
-        )],
-        [InlineKeyboardButton(
+        )])
+        rows.append([InlineKeyboardButton(
             text="📅 Выбрать дату...",
             callback_data=f"{callback_prefix}:custom"
-        )],
-        [InlineKeyboardButton(text="❌ Отмена", callback_data=cancel_callback)]
-    ])
+        )])
+    rows.append([InlineKeyboardButton(text="❌ Отмена", callback_data=cancel_callback)])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def make_work_buttons(cat_items, columns=2):
     buttons = []
     row = []
     for code, name, price, cat, price_type in cat_items:
+        if price_type == 'custom':
+            # подработка (шабашка) — сумму вводит работник, всегда отдельной строкой
+            if row:
+                buttons.append(row)
+                row = []
+            buttons.append([InlineKeyboardButton(
+                text=f"💵 {name}",
+                callback_data=f"work:{code}"
+            )])
+            continue
         row.append(InlineKeyboardButton(
             text=f"{name} {int(price)}₽",
             callback_data=f"work:{code}"

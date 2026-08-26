@@ -30,12 +30,15 @@ async def reminder_settings_menu(message: types.Message, state: FSMContext):
     ev_status = "✅" if settings['evening_enabled'] else "❌"
     lt_status = "✅" if settings['late_enabled'] else "❌"
     rp_status = "✅" if settings['report_enabled'] else "❌"
+    me_status = "✅" if settings.get('month_end_enabled', True) else "❌"
 
     text = (
         "⏰ Настройка напоминаний\n\n"
         f"{ev_status} Вечернее: {settings['evening_hour']:02d}:{settings['evening_minute']:02d}\n"
         f"{lt_status} Позднее: {settings['late_hour']:02d}:{settings['late_minute']:02d}\n"
         f"{rp_status} Отчёт админу: {settings['report_hour']:02d}:{settings['report_minute']:02d}\n"
+        f"{me_status} Конец месяца (посл. 3 дня): "
+        f"{settings['month_end_hour']:02d}:{settings['month_end_minute']:02d}\n"
         f"\nОбновлено: {datetime.now().strftime('%H:%M:%S')}"
     )
 
@@ -54,7 +57,13 @@ async def reminder_settings_menu(message: types.Message, state: FSMContext):
         )],
         [InlineKeyboardButton(text="🕐 Время вечернего", callback_data="rem:time_evening")],
         [InlineKeyboardButton(text="🕐 Время позднего", callback_data="rem:time_late")],
+        [InlineKeyboardButton(
+            text=f"{'🔴' if settings.get('month_end_enabled', True) else '🟢'} "
+                 f"Конец месяца {'выкл' if settings.get('month_end_enabled', True) else 'вкл'}",
+            callback_data="rem:toggle_month_end"
+        )],
         [InlineKeyboardButton(text="🕐 Время отчёта", callback_data="rem:time_report")],
+        [InlineKeyboardButton(text="🕐 Время «конец месяца»", callback_data="rem:time_month_end")],
         [InlineKeyboardButton(text="🔄 Применить", callback_data="rem:apply")],
         [InlineKeyboardButton(text="🔙 Назад", callback_data="rem:back")],
     ]
@@ -79,7 +88,11 @@ async def reminder_action(callback: types.CallbackQuery, state: FSMContext):
         new_val = not settings['report_enabled']
         await update_reminder_settings(report_enabled=int(new_val))
         await callback.answer(f"Отчёт: {'ВКЛ' if new_val else 'ВЫКЛ'}")
-    elif action in ("time_evening", "time_late", "time_report"):
+    elif action == "toggle_month_end":
+        new_val = not settings.get('month_end_enabled', True)
+        await update_reminder_settings(month_end_enabled=bool(new_val))
+        await callback.answer(f"Конец месяца: {'ВКЛ' if new_val else 'ВЫКЛ'}")
+    elif action in ("time_evening", "time_late", "time_report", "time_month_end"):
         await state.update_data(time_target=action.replace("time_", ""))
         await callback.message.edit_text("Введите время в формате ЧЧ:ММ\n\nНапример: 18:30")
         await state.set_state(AdminReminderSettings.entering_time)
@@ -102,12 +115,15 @@ async def reminder_action(callback: types.CallbackQuery, state: FSMContext):
     ev_status = "✅" if settings['evening_enabled'] else "❌"
     lt_status = "✅" if settings['late_enabled'] else "❌"
     rp_status = "✅" if settings['report_enabled'] else "❌"
+    me_status = "✅" if settings.get('month_end_enabled', True) else "❌"
 
     text = (
         f"⏰ Настройка напоминаний\n\n"
         f"{ev_status} Вечернее: {settings['evening_hour']:02d}:{settings['evening_minute']:02d}\n"
         f"{lt_status} Позднее: {settings['late_hour']:02d}:{settings['late_minute']:02d}\n"
         f"{rp_status} Отчёт админу: {settings['report_hour']:02d}:{settings['report_minute']:02d}\n"
+        f"{me_status} Конец месяца (посл. 3 дня): "
+        f"{settings['month_end_hour']:02d}:{settings['month_end_minute']:02d}\n"
         f"\nОбновлено: {datetime.now().strftime('%H:%M:%S')}"
     )
 
@@ -126,7 +142,13 @@ async def reminder_action(callback: types.CallbackQuery, state: FSMContext):
         )],
         [InlineKeyboardButton(text="🕐 Время вечернего", callback_data="rem:time_evening")],
         [InlineKeyboardButton(text="🕐 Время позднего", callback_data="rem:time_late")],
+        [InlineKeyboardButton(
+            text=f"{'🔴' if settings.get('month_end_enabled', True) else '🟢'} "
+                 f"Конец месяца {'выкл' if settings.get('month_end_enabled', True) else 'вкл'}",
+            callback_data="rem:toggle_month_end"
+        )],
         [InlineKeyboardButton(text="🕐 Время отчёта", callback_data="rem:time_report")],
+        [InlineKeyboardButton(text="🕐 Время «конец месяца»", callback_data="rem:time_month_end")],
         [InlineKeyboardButton(text="🔄 Применить", callback_data="rem:apply")],
         [InlineKeyboardButton(text="🔙 Назад", callback_data="rem:back")],
     ]
@@ -158,6 +180,8 @@ async def reminder_time_entered(message: types.Message, state: FSMContext):
         await update_reminder_settings(late_hour=hour, late_minute=minute)
     elif target == "report":
         await update_reminder_settings(report_hour=hour, report_minute=minute)
+    elif target == "month_end":
+        await update_reminder_settings(month_end_hour=hour, month_end_minute=minute)
 
     await message.answer(
         f"✅ Время установлено: {hour:02d}:{minute:02d}\n\n"

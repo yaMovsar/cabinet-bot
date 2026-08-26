@@ -14,7 +14,7 @@ from database import (
 from states import ReportWorker, MonthlySummaryWorker, SalaryPayout
 from utils import (
     format_date, format_date_short, send_long_message, MONTHS_RU,
-    format_salary_block, format_work_summary
+    format_salary_block, format_work_summary, unit_of, format_qty
 )
 from handlers.filters import StaffFilter, AdminFilter
 from reports import generate_monthly_report, generate_worker_report, generate_salary_report
@@ -165,8 +165,8 @@ async def monthly_summary_worker_chosen(callback: types.CallbackQuery, state: FS
             cat_total = 0
             text += f"{c_emoji} {c_name}:\n"
         
-        unit_label = "м²" if price_type == "square" else "шт"
-        qty_display = f"{qty:.2f}" if price_type == "square" else str(int(qty))
+        unit_label = unit_of(price_type)
+        qty_display = format_qty(qty, price_type)
         text += f"   ▪️ {pl_name}: {qty_display} {unit_label} x {int(price)} руб = {int(total)} руб\n"
         cat_total += total
     

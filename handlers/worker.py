@@ -1,4 +1,4 @@
-from datetime import date, timedelta
+from datetime import date
 import logging
 
 from aiogram import Router, types, F, Bot
@@ -17,7 +17,11 @@ from database import (
 )
 from states import WorkEntry, ViewEntries, WorkerDeleteEntry, WorkerEditEntry
 from keyboards import make_date_picker, make_work_buttons
-from utils import format_date, format_date_short, parse_user_date, send_long_message, MONTHS_RU, format_salary_block
+from utils import (
+    format_date, format_date_short, parse_user_date, send_long_message, MONTHS_RU,
+    format_salary_block, unit_of, format_qty, format_qty_unit,
+    SIDE_JOB_TYPE, is_month_open, MONTH_CLOSED_TEXT,
+)
 from keyboards import get_main_keyboard
 
 router = Router()
@@ -42,9 +46,11 @@ def is_today(date_value) -> bool:
     return to_date_str(date_value) == date.today().isoformat()
 
 
-def can_edit_entry(created_at_str, user_id) -> bool:
+def can_edit_entry(created_at_str, user_id, work_date=None) -> bool:
     if user_id == ADMIN_ID or user_id in MANAGER_IDS:
         return True
+    if work_date is not None and not is_month_open(work_date):
+        return False
     if not created_at_str:
         return True
     try:
@@ -53,6 +59,14 @@ def can_edit_entry(created_at_str, user_id) -> bool:
         return (date.today() - created).days <= 7
     except Exception:
         return True
+
+
+def _no_edit_reason(entry) -> str:
+    if not entry:
+        return "❌ Запись не найдена"
+    if not is_month_open(entry[5]):
+        return "🔒 Месяц закрыт — изменить запись нельзя"
+    return "🔒 Запись старше 7 дней — изменение недоступно"
 
 
 # ==================== ЗАПИСАТЬ РАБОТУ ====================
@@ -81,6 +95,13 @@ async def work_date_chosen(callback: types.CallbackQuery, state: FSMContext):
         await state.set_state(WorkEntry.entering_custom_date)
         await callback.answer()
         return
+    if not is_month_open(value):
+        await callback.answer("🔒 Прошлый месяц закрыт", show_alert=True)
+        await callback.message.edit_text(
+            MONTH_CLOSED_TEXT + "\n\n📅 За какой день записать работу?",
+            reply_markup=make_date_picker("wdate", "cancel")
+        )
+        return
     await state.update_data(work_date=value)
     await show_category_or_work(callback, state, value)
     await callback.answer()
@@ -95,8 +116,8 @@ async def custom_date_entered(message: types.Message, state: FSMContext):
     if chosen > date.today():
         await message.answer("❌ Нельзя записать на будущую дату!")
         return
-    if chosen < date.today() - timedelta(days=90):
-        await message.answer("❌ Нельзя записать дату старше 90 дней!")
+    if not is_month_open(chosen):
+        await message.answer(MONTH_CLOSED_TEXT)
         return
 
     chosen_date = chosen.isoformat()
@@ -241,7 +262,10 @@ async def work_chosen(callback: types.CallbackQuery, state: FSMContext):
 
     data = await state.get_data()
 
-    if price_type == 'square':
+    if price_type == SIDE_JOB_TYPE:
+        prompt = f"📅 Дата: {format_date(data['work_date'])}\n" \
+                 f"💵 {info[1]} (шабашка)\n\nВведите сумму в рублях:"
+    elif price_type == 'square':
         prompt = f"📅 Дата: {format_date(data['work_date'])}\n" \
                  f"{info[1]} ({int(info[2])} руб/м²)\n\nВведите площадь (м²):"
     else:
@@ -262,6 +286,8 @@ async def quantity_entered(message: types.Message, state: FSMContext):
     try:
         if price_type == 'square':
             qty = float(message.text.replace(',', '.'))
+        elif price_type == SIDE_JOB_TYPE:
+            qty = round(float(message.text.replace(',', '.').replace(' ', '')))
         else:
             qty = int(message.text)
 
@@ -270,8 +296,19 @@ async def quantity_entered(message: types.Message, state: FSMContext):
     except ValueError:
         if price_type == 'square':
             await message.answer("❌ Введите положительное число!\nПример: 12.5")
+        elif price_type == SIDE_JOB_TYPE:
+            await message.answer("❌ Введите сумму числом!\nПример: 5000")
         else:
             await message.answer("❌ Введите положительное целое число!")
+        return
+
+    if price_type == SIDE_JOB_TYPE:
+        await state.update_data(quantity=qty)
+        await message.answer(
+            f"💵 Сумма: {format_qty_unit(qty, price_type)}\n\n"
+            f"✏️ Опишите коротко, что за подработка (например: «сборка шкафа на выезде»):"
+        )
+        await state.set_state(WorkEntry.entering_comment)
         return
 
     total = qty * info["price"]
@@ -284,13 +321,44 @@ async def quantity_entered(message: types.Message, state: FSMContext):
             [InlineKeyboardButton(text="❌ Отмена", callback_data="confirm_large:cancel")]
         ]
 
-        unit_label = "м²" if price_type == 'square' else "шт"
-        qty_display = f"{qty:.2f}" if price_type == 'square' else str(int(qty))
+        unit_label = unit_of(price_type)
+        qty_display = format_qty(qty, price_type)
 
         await message.answer(
             f"⚠️ Внимание! Большая сумма!\n\n"
             f"📅 Дата: {format_date(data.get('work_date', date.today().isoformat()))}\n"
             f"📦 {info['name']} x {qty_display} {unit_label} = {int(total)} руб\n\nВсё верно?",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
+        )
+        await state.set_state(WorkEntry.confirming_large)
+        return
+
+    await save_work_entry(message, state, qty)
+
+
+@router.message(WorkEntry.entering_comment)
+async def side_job_comment_entered(message: types.Message, state: FSMContext):
+    comment = message.text.strip()
+    if len(comment) < 3:
+        await message.answer("❌ Напишите пару слов о подработке (минимум 3 символа).")
+        return
+    comment = comment[:200]
+
+    data = await state.get_data()
+    qty = data["quantity"]
+    await state.update_data(comment=comment)
+
+    if qty > 10000:
+        buttons = [
+            [InlineKeyboardButton(text="✅ Да, записать!", callback_data="confirm_large:yes")],
+            [InlineKeyboardButton(text="✏️ Изменить сумму", callback_data="confirm_large:edit")],
+            [InlineKeyboardButton(text="❌ Отмена", callback_data="confirm_large:cancel")]
+        ]
+        await message.answer(
+            f"⚠️ Внимание! Большая сумма!\n\n"
+            f"📅 Дата: {format_date(data.get('work_date', date.today().isoformat()))}\n"
+            f"💵 Подработка: {format_qty_unit(qty, SIDE_JOB_TYPE)}\n"
+            f"📝 {comment}\n\nВсё верно?",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
         )
         await state.set_state(WorkEntry.confirming_large)
@@ -312,7 +380,9 @@ async def confirm_large_entry(callback: types.CallbackQuery, state: FSMContext):
         info = data["work_info"]
         price_type = info.get("price_type", "unit")
 
-        if price_type == 'square':
+        if price_type == SIDE_JOB_TYPE:
+            await callback.message.edit_text("Введите правильную сумму (₽):")
+        elif price_type == 'square':
             await callback.message.edit_text("Введите правильную площадь (м²):")
         else:
             await callback.message.edit_text("Введите правильное количество:")
@@ -331,8 +401,9 @@ async def save_work_entry(message, state, qty, user=None):
     info = data["work_info"]
     work_date = to_date_str(data.get("work_date", date.today().isoformat()))
     price_type = info.get("price_type", "unit")
+    comment = data.get("comment", "") if price_type == SIDE_JOB_TYPE else ""
 
-    total = await add_work(user.id, info["code"], qty, info["price"], work_date)
+    total = await add_work(user.id, info["code"], qty, info["price"], work_date, comment)
     daily = await get_daily_total(user.id, work_date)
     day_total = sum(r[3] for r in daily)
 
@@ -341,13 +412,16 @@ async def save_work_entry(message, state, qty, user=None):
         [InlineKeyboardButton(text="🏠 В меню", callback_data="back_to_menu")],
     ])
 
-    unit_label = "м²" if price_type == 'square' else "шт"
-    qty_display = f"{qty:.2f}" if price_type == 'square' else str(int(qty))
+    if price_type == SIDE_JOB_TYPE:
+        work_line = f"💵 {info['name']}: {int(total)} руб\n📝 {comment}"
+    else:
+        work_line = (f"📦 {info['name']} x {format_qty(qty, price_type)} "
+                     f"{unit_of(price_type)} = {int(total)} руб")
 
     await message.answer(
         f"✅ Записано!\n\n"
         f"📅 Дата: {format_date(work_date)}\n"
-        f"📦 {info['name']} x {qty_display} {unit_label} = {int(total)} руб\n"
+        f"{work_line}\n"
         f"💰 За этот день: {int(day_total)} руб",
         reply_markup=buttons
     )
@@ -357,7 +431,7 @@ async def save_work_entry(message, state, qty, user=None):
             f"📬 Новая запись!\n\n"
             f"👤 {user.full_name}\n"
             f"📅 {format_date(work_date)}\n"
-            f"📦 {info['name']} x {qty_display} {unit_label} = {int(total)} руб\n"
+            f"{work_line}\n"
             f"💰 За этот день: {int(day_total)} руб"
         )
         try:
@@ -448,23 +522,32 @@ async def view_entry_details(callback: types.CallbackQuery, state: FSMContext):
     await state.update_data(entry_id=entry_id)
     
     price_type = entry[8] if len(entry) > 8 else "unit"
-    unit = "м²" if price_type == "square" else "шт"
-    qty_display = f"{entry[2]:.2f}" if price_type == "square" else str(int(entry[2]))
+    unit = unit_of(price_type)
     created_at = entry[9] if len(entry) > 9 else None
-    editable = can_edit_entry(created_at, callback.from_user.id)
+    comment = entry[10] if len(entry) > 10 else ""
+    editable = can_edit_entry(created_at, callback.from_user.id, entry[5])
 
     text = f"📦 <b>{entry[1]}</b>\n\n"
     text += f"📅 Дата: {format_date(entry[5])}\n"
-    text += f"🔢 Количество: {qty_display} {unit}\n"
-    text += f"💵 Расценка: {int(entry[3])} ₽/{unit}\n"
-    text += f"💰 Сумма: {int(entry[4])} ₽"
+    if price_type == SIDE_JOB_TYPE:
+        if comment:
+            text += f"📝 {comment}\n"
+        text += f"💰 Сумма: {int(entry[4])} ₽"
+    else:
+        text += f"🔢 Количество: {format_qty(entry[2], price_type)} {unit}\n"
+        text += f"💵 Расценка: {int(entry[3])} ₽/{unit}\n"
+        text += f"💰 Сумма: {int(entry[4])} ₽"
 
     if not editable:
-        text += "\n\n🔒 Запись старше 7 дней — редактирование недоступно"
+        if not is_month_open(entry[5]):
+            text += "\n\n🔒 Месяц закрыт — изменить запись нельзя"
+        else:
+            text += "\n\n🔒 Запись старше 7 дней — редактирование недоступно"
 
     buttons = []
     if editable:
-        buttons.append([InlineKeyboardButton(text="✏️ Изменить кол-во", callback_data="entry_edit")])
+        edit_label = "✏️ Изменить сумму" if price_type == SIDE_JOB_TYPE else "✏️ Изменить кол-во"
+        buttons.append([InlineKeyboardButton(text=edit_label, callback_data="entry_edit")])
         buttons.append([InlineKeyboardButton(text="🗑 Удалить", callback_data="entry_delete")])
     buttons.append([InlineKeyboardButton(text="🔙 Назад", callback_data="entry_back")])
     
@@ -480,10 +563,15 @@ async def view_entry_details(callback: types.CallbackQuery, state: FSMContext):
 async def entry_edit_start(callback: types.CallbackQuery, state: FSMContext):
     data = await state.get_data()
     entry = await get_entry_by_id(data["entry_id"])
-    if not entry or not can_edit_entry(entry[9] if len(entry) > 9 else None, callback.from_user.id):
-        await callback.answer("🔒 Запись старше 7 дней — редактирование недоступно", show_alert=True)
+    if not entry or not can_edit_entry(entry[9] if len(entry) > 9 else None,
+                                       callback.from_user.id, entry[5] if entry else None):
+        await callback.answer(_no_edit_reason(entry), show_alert=True)
         return
-    await callback.message.edit_text("✏️ Введите новое количество:")
+    price_type = entry[8] if len(entry) > 8 else "unit"
+    if price_type == SIDE_JOB_TYPE:
+        await callback.message.edit_text("✏️ Введите новую сумму (₽):")
+    else:
+        await callback.message.edit_text("✏️ Введите новое количество:")
     await state.set_state(WorkerEditEntry.entering_new_quantity)
     await callback.answer()
 
@@ -492,8 +580,9 @@ async def entry_edit_start(callback: types.CallbackQuery, state: FSMContext):
 async def entry_delete_confirm(callback: types.CallbackQuery, state: FSMContext):
     data = await state.get_data()
     entry = await get_entry_by_id(data["entry_id"])
-    if not entry or not can_edit_entry(entry[9] if len(entry) > 9 else None, callback.from_user.id):
-        await callback.answer("🔒 Запись старше 7 дней — удаление недоступно", show_alert=True)
+    if not entry or not can_edit_entry(entry[9] if len(entry) > 9 else None,
+                                       callback.from_user.id, entry[5] if entry else None):
+        await callback.answer(_no_edit_reason(entry), show_alert=True)
         return
     
     buttons = [
@@ -553,21 +642,37 @@ async def entry_edit_quantity(message: types.Message, state: FSMContext):
         await state.clear()
         return
     
+    if not can_edit_entry(entry[9] if len(entry) > 9 else None,
+                          message.from_user.id, entry[5]):
+        await message.answer(_no_edit_reason(entry))
+        await state.clear()
+        return
+
+    price_type = entry[8] if len(entry) > 8 else "unit"
+    if price_type == SIDE_JOB_TYPE:
+        new_qty = round(new_qty)
+
     old_qty = entry[2]
     old_total = entry[4]
     new_total = new_qty * entry[3]
-    
+
     await update_entry_quantity(data["entry_id"], new_qty)
-    
-    price_type = entry[8] if len(entry) > 8 else "unit"
-    unit = "м²" if price_type == "square" else "шт"
-    
-    await message.answer(
-        f"✅ Изменено!\n\n"
-        f"📦 {entry[1]}\n"
-        f"Было: {int(old_qty)} {unit} = {int(old_total)} ₽\n"
-        f"Стало: {int(new_qty)} {unit} = {int(new_total)} ₽"
-    )
+
+    if price_type == SIDE_JOB_TYPE:
+        await message.answer(
+            f"✅ Изменено!\n\n"
+            f"💵 {entry[1]}\n"
+            f"Было: {int(old_total)} ₽\n"
+            f"Стало: {int(new_total)} ₽"
+        )
+    else:
+        unit = unit_of(price_type)
+        await message.answer(
+            f"✅ Изменено!\n\n"
+            f"📦 {entry[1]}\n"
+            f"Было: {format_qty(old_qty, price_type)} {unit} = {int(old_total)} ₽\n"
+            f"Стало: {format_qty(new_qty, price_type)} {unit} = {int(new_total)} ₽"
+        )
     await state.clear()
 
 
@@ -597,13 +702,17 @@ async def _render_month_entries(callback: types.CallbackQuery, state: FSMContext
             text += f"\n📅 <b>{format_date(wdate)}</b>:\n"
             current_date = wdate
 
-        unit = "м²" if price_type == "square" else "шт"
-        qty_display = f"{qty:.2f}" if price_type == "square" else str(int(qty))
-        text += f"   • {name} × {qty_display} = {int(total)} ₽\n"
+        if price_type == SIDE_JOB_TYPE:
+            text += f"   • 💵 {name} = {int(total)} ₽\n"
+            btn_text = f"💵 {name} {int(total)}₽ ({format_date(wdate)})"
+        else:
+            qty_display = f"{format_qty(qty, price_type)} {unit_of(price_type)}"
+            text += f"   • {name} × {qty_display} = {int(total)} ₽\n"
+            btn_text = f"📝 {name} ×{qty_display} ({format_date(wdate)})"
         total_month += total
 
         buttons.append([InlineKeyboardButton(
-            text=f"📝 {name} ×{qty_display} ({format_date(wdate)})",
+            text=btn_text,
             callback_data=f"view_entry:{eid}"
         )])
 
@@ -764,8 +873,8 @@ async def show_daily(message: types.Message, state: FSMContext):
     text = f"📊 {today.strftime('%d.%m.%Y')}:\n\n"
     total = 0
     for code, qty, price, sub, price_type in rows:
-        unit = "м²" if price_type == "square" else "шт"
-        qty_display = f"{qty:.2f}" if price_type == "square" else str(int(qty))
+        unit = unit_of(price_type)
+        qty_display = format_qty(qty, price_type)
         text += f"▪️ {names.get(code, code)}: {qty_display} {unit} x {int(price)} руб = {int(sub)} руб\n"
         total += sub
     text += f"\n💰 Итого за день: {int(total)} руб"
@@ -814,8 +923,8 @@ async def monthly_month_chosen(callback: types.CallbackQuery, state: FSMContext)
             current_date = work_date
             day_total = 0
             work_days += 1
-        unit = "м²" if price_type == "square" else "шт"
-        qty_display = f"{qty:.2f}" if price_type == "square" else str(int(qty))
+        unit = unit_of(price_type)
+        qty_display = format_qty(qty, price_type)
         text += f"   ▪️ {name} x {qty_display} {unit} = {int(subtotal)} руб\n"
         day_total += subtotal
         grand_total += subtotal

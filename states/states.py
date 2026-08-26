@@ -9,6 +9,7 @@ class WorkEntry(StatesGroup):
     choosing_category = State()
     choosing_work = State()
     entering_quantity = State()
+    entering_comment = State()      # описание подработки (шабашки)
     confirming_large = State()
 
 

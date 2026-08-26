@@ -11,7 +11,7 @@ from database import (
     get_worker_categories
 )
 from states import ManagerWorkerReport, ManagerShopReport
-from utils import send_long_message, MONTHS_RU, format_salary_block, format_work_summary
+from utils import send_long_message, MONTHS_RU, format_salary_block, format_work_summary, unit_of, format_qty
 from handlers.filters import StaffFilter
 from reports import generate_worker_report, generate_salary_report
 
@@ -128,8 +128,8 @@ async def manager_worker_report_format(callback: types.CallbackQuery, state: FSM
                 current_cat = c_name
                 cat_total = 0
                 text += f"{c_emoji} {c_name}:\n"
-            unit = "м²" if price_type == "square" else "шт"
-            qty_display = f"{qty:.2f}" if price_type == "square" else str(int(qty))
+            unit = unit_of(price_type)
+            qty_display = format_qty(qty, price_type)
             text += f"   ▪️ {pl_name}: {qty_display} {unit} × {int(price)} = {int(total)} руб\n"
             cat_total += total
         if current_cat:

@@ -143,6 +143,18 @@ async def init_db():
             ALTER TABLE workers
             ADD COLUMN IF NOT EXISTS is_ghost BOOLEAN NOT NULL DEFAULT FALSE
         """)
+        await conn.execute("""
+            ALTER TABLE work_log
+            ADD COLUMN IF NOT EXISTS comment TEXT DEFAULT ''
+        """)
+        for col, default in (
+            ('month_end_enabled', 'TRUE'),
+            ('month_end_hour', '12'),
+            ('month_end_minute', '0'),
+        ):
+            await conn.execute(
+                f"ALTER TABLE reminder_settings ADD COLUMN IF NOT EXISTS {col} "
+                f"{'BOOLEAN' if col.endswith('enabled') else 'INTEGER'} DEFAULT {default}")
         count = await conn.fetchval("SELECT COUNT(*) FROM reminder_settings")
         if count == 0:
             await conn.execute("""
@@ -157,6 +169,8 @@ async def init_db():
         await conn.execute("CREATE INDEX IF NOT EXISTS idx_advances_worker_date ON advances(worker_id, advance_date)")
         await conn.execute("CREATE INDEX IF NOT EXISTS idx_penalties_worker_date ON penalties(worker_id, penalty_date)")
         await conn.execute("CREATE INDEX IF NOT EXISTS idx_worker_categories ON worker_categories(worker_id, category_code)")
+
+    await ensure_side_job_items()
 
 
 async def close_db():
@@ -174,6 +188,34 @@ async def add_category(code: str, name: str, emoji: str = "📦"):
             INSERT INTO categories (code, name, emoji) VALUES ($1, $2, $3)
             ON CONFLICT (code) DO UPDATE SET name = $2, emoji = $3
         """, code, name, emoji)
+    await ensure_side_job_items(code)
+
+
+SIDE_JOB_TYPE = 'custom'
+SIDE_JOB_NAME = 'Подработка'
+
+
+def side_job_code(category_code: str) -> str:
+    return f"side_{category_code}"
+
+
+async def ensure_side_job_items(category_code: str = None):
+    """
+    В каждой категории должна быть работа «Подработка» (шабашка):
+    работник вводит не количество, а сумму в рублях.
+    Хранится как quantity = сумма, price_per_unit = 1 → total = сумма.
+    """
+    async with pool.acquire() as conn:
+        if category_code:
+            codes = [category_code]
+        else:
+            codes = [r['code'] for r in await conn.fetch("SELECT code FROM categories")]
+        for code in codes:
+            await conn.execute("""
+                INSERT INTO price_list (code, name, price, price_type, category_code, is_active)
+                VALUES ($1, $2, 1, $3, $4, TRUE)
+                ON CONFLICT (code) DO UPDATE SET is_active = TRUE, price_type = $3
+            """, side_job_code(code), SIDE_JOB_NAME, SIDE_JOB_TYPE, code)
 
 
 async def get_categories():
@@ -258,6 +300,14 @@ async def get_all_workers():
                    CASE WHEN is_ghost THEN '👻 ' || name ELSE name END AS name
             FROM workers ORDER BY name
         """)
+        return [tuple(row) for row in rows]
+
+
+async def get_active_workers():
+    """Реальные работники с Telegram — для рассылок и напоминаний"""
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT telegram_id, name FROM workers WHERE is_ghost = FALSE AND telegram_id > 0 ORDER BY name")
         return [tuple(row) for row in rows]
 
 
@@ -432,7 +482,7 @@ async def get_price_list_for_worker(worker_id: int):
             FROM price_list pl
             JOIN worker_categories wc ON pl.category_code = wc.category_code
             WHERE wc.worker_id = $1 AND pl.is_active = TRUE
-            ORDER BY pl.category_code, pl.name
+            ORDER BY pl.category_code, (pl.price_type = 'custom'), pl.name
         """, worker_id)
         return [tuple(row) for row in rows]
 
@@ -485,14 +535,15 @@ async def get_work_by_code(code: str):
 
 # ==================== ЗАПИСИ О РАБОТЕ ====================
 
-async def add_work(worker_id: int, work_code: str, quantity: float, price: float, work_date=None) -> float:
+async def add_work(worker_id: int, work_code: str, quantity: float, price: float,
+                   work_date=None, comment: str = '') -> float:
     work_date = parse_date(work_date)
     total = quantity * price
     async with pool.acquire() as conn:
         await conn.execute("""
-            INSERT INTO work_log (worker_id, work_code, quantity, price_per_unit, total, work_date)
-            VALUES ($1, $2, $3, $4, $5, $6)
-        """, worker_id, work_code, quantity, price, total, work_date)
+            INSERT INTO work_log (worker_id, work_code, quantity, price_per_unit, total, work_date, comment)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
+        """, worker_id, work_code, quantity, price, total, work_date, comment or '')
     return total
 
 
@@ -511,7 +562,7 @@ async def get_entry_by_id(entry_id: int):
         row = await conn.fetchrow("""
             SELECT wl.id, pl.name, wl.quantity, wl.price_per_unit, wl.total,
                    wl.work_date::TEXT, wl.worker_id, w.name, pl.price_type,
-                   wl.created_at::TEXT
+                   wl.created_at::TEXT, COALESCE(wl.comment, '')
             FROM work_log wl
             JOIN price_list pl ON wl.work_code = pl.code
             JOIN workers w ON wl.worker_id = w.telegram_id
@@ -1101,12 +1152,16 @@ async def get_reminder_settings():
                 'evening_enabled': row['evening_enabled'],
                 'late_enabled': row['late_enabled'],
                 'report_enabled': row['report_enabled'],
+                'month_end_enabled': row['month_end_enabled'],
+                'month_end_hour': row['month_end_hour'],
+                'month_end_minute': row['month_end_minute'],
             }
         return {
             'evening_hour': 18, 'evening_minute': 0,
             'late_hour': 20, 'late_minute': 0,
             'report_hour': 21, 'report_minute': 0,
             'evening_enabled': True, 'late_enabled': True, 'report_enabled': True,
+            'month_end_enabled': True, 'month_end_hour': 12, 'month_end_minute': 0,
         }
 
 

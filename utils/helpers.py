@@ -1,6 +1,8 @@
 import logging
 from aiogram import types
 
+from .formatters import unit_of, format_qty, SIDE_JOB_TYPE
+
 
 def format_salary_block(stats: dict, work_days: int = None) -> str:
     """Форматирует блок расчёта зарплаты: сдельно + оклад + премия → начислено → к выплате"""
@@ -35,9 +37,11 @@ def format_work_summary(details) -> str:
     """Строка «Что сделал» для ведомости: сдельные работы."""
     parts = []
     for pl_name, c_emoji, c_name, qty, price, total, price_type in details:
-        unit = "м²" if price_type == "square" else "шт"
-        qty_str = f"{qty:.1f}" if price_type == "square" else str(int(qty))
-        parts.append(f"{pl_name}: {qty_str} {unit} = {int(total)} руб")
+        if price_type == SIDE_JOB_TYPE:
+            parts.append(f"{pl_name}: {int(total)} руб")
+            continue
+        qty_str = format_qty(qty, price_type)
+        parts.append(f"{pl_name}: {qty_str} {unit_of(price_type)} = {int(total)} руб")
     return "\n".join(parts) if parts else "нет записей"
 
 

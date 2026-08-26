@@ -9,11 +9,12 @@ from config import BOT_TOKEN, ADMIN_ID
 from database import (
     init_db, close_db, get_reminder_settings,
     get_workers_without_records, get_all_workers_daily_summary,
-    get_inactive_workers
+    get_inactive_workers, get_active_workers, get_monthly_total
 )
 from handlers import setup_routers
 from handlers.reminders import set_scheduler
 from middlewares import RoleMiddleware
+from utils import MONTHS_RU, days_left_in_month
 
 logging.basicConfig(level=logging.INFO)
 
@@ -133,6 +134,59 @@ async def send_late_reminder():
             logging.error(f"Late {name}: {e}")
 
 
+async def send_month_end_reminder():
+    """
+    Последние 3 дня месяца: напоминаем внести все записи.
+    С 1-го числа записи за прошлый месяц уже не добавить.
+    """
+    settings = await get_reminder_settings()
+    if not settings.get('month_end_enabled', True):
+        return
+
+    days_left = days_left_in_month()
+    if days_left > 2:
+        return
+
+    today = date.today()
+    month_name = MONTHS_RU[today.month].lower()
+    if days_left == 0:
+        deadline = f"⏳ СЕГОДНЯ последний день ({month_name})!"
+    elif days_left == 1:
+        deadline = f"⏳ До конца месяца остался 1 день ({month_name})."
+    else:
+        deadline = f"⏳ До конца месяца осталось {days_left} дня ({month_name})."
+
+    sent = 0
+    failed = 0
+    for tid, name in await get_active_workers():
+        try:
+            rows = await get_monthly_total(tid)
+            earned = f"{int(sum(r[3] for r in rows)):,}".replace(",", " ")
+            text = (
+                f"{deadline}\n\n"
+                f"📝 Внесите ВСЕ свои записи за {month_name}!\n\n"
+                f"💰 Сейчас у вас записано: {earned} руб\n\n"
+                f"⚠️ С 1-го числа записи за {month_name} добавить будет НЕЛЬЗЯ — "
+                f"месяц закрывается, зарплата считается по тому, что записано."
+            )
+            await bot.send_message(tid, text)
+            sent += 1
+        except Exception as e:
+            failed += 1
+            logging.error(f"Month-end reminder {name}: {e}")
+
+    try:
+        await bot.send_message(
+            ADMIN_ID,
+            f"📢 Напоминание о закрытии месяца отправлено\n"
+            f"✅ Доставлено: {sent}\n"
+            f"❌ Не доставлено: {failed}\n"
+            f"📅 Дней до конца месяца: {days_left}"
+        )
+    except Exception:
+        pass
+
+
 async def send_admin_report():
     settings = await get_reminder_settings()
     if not settings['report_enabled']:
@@ -205,9 +259,16 @@ async def safe_admin_report():
         logging.exception(f"Admin report failed: {e}")
 
 
+async def safe_month_end_reminder():
+    try:
+        await send_month_end_reminder()
+    except Exception as e:
+        logging.exception(f"Month-end reminder failed: {e}")
+
+
 async def reschedule_reminders():
     settings = await get_reminder_settings()
-    for job_id in ['evening_reminder', 'late_reminder', 'admin_report']:
+    for job_id in ['evening_reminder', 'late_reminder', 'admin_report', 'month_end_reminder']:
         try:
             scheduler.remove_job(job_id)
         except Exception:
@@ -224,6 +285,10 @@ async def reschedule_reminders():
         scheduler.add_job(safe_admin_report, "cron",
             hour=settings['report_hour'], minute=settings['report_minute'],
             id='admin_report', replace_existing=True)
+    if settings.get('month_end_enabled', True):
+        scheduler.add_job(safe_month_end_reminder, "cron",
+            hour=settings['month_end_hour'], minute=settings['month_end_minute'],
+            id='month_end_reminder', replace_existing=True)
 
 
 # ==================== ЗАПУСК ====================
@@ -257,6 +322,10 @@ async def main():
         scheduler.add_job(safe_admin_report, "cron",
             hour=settings['report_hour'], minute=settings['report_minute'],
             id='admin_report')
+    if settings.get('month_end_enabled', True):
+        scheduler.add_job(safe_month_end_reminder, "cron",
+            hour=settings['month_end_hour'], minute=settings['month_end_minute'],
+            id='month_end_reminder')
     
     # Бэкап каждые 5 часов
     scheduler.add_job(safe_backup, "interval", hours=5, id='auto_backup_interval')
