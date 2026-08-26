@@ -192,7 +192,7 @@ async def add_category(code: str, name: str, emoji: str = "📦"):
 
 
 SIDE_JOB_TYPE = 'custom'
-SIDE_JOB_NAME = 'Подработка'
+SIDE_JOB_NAME = 'Шабашка'
 
 
 def side_job_code(category_code: str) -> str:
@@ -201,7 +201,7 @@ def side_job_code(category_code: str) -> str:
 
 async def ensure_side_job_items(category_code: str = None):
     """
-    В каждой категории должна быть работа «Подработка» (шабашка):
+    В каждой категории должна быть работа «Шабашка» (подработка):
     работник вводит не количество, а сумму в рублях.
     Хранится как quantity = сумма, price_per_unit = 1 → total = сумма.
     """
@@ -214,7 +214,7 @@ async def ensure_side_job_items(category_code: str = None):
             await conn.execute("""
                 INSERT INTO price_list (code, name, price, price_type, category_code, is_active)
                 VALUES ($1, $2, 1, $3, $4, TRUE)
-                ON CONFLICT (code) DO UPDATE SET is_active = TRUE, price_type = $3
+                ON CONFLICT (code) DO UPDATE SET name = $2, is_active = TRUE, price_type = $3
             """, side_job_code(code), SIDE_JOB_NAME, SIDE_JOB_TYPE, code)
 
 

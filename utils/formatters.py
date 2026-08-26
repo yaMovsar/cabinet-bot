@@ -38,7 +38,7 @@ def format_money(amount: float) -> str:
 # ==================== ТИПЫ РАБОТ ====================
 
 SIDE_JOB_TYPE = 'custom'   # подработка/шабашка — работник вводит сумму в рублях
-SIDE_JOB_NAME = 'Подработка'
+SIDE_JOB_NAME = 'Шабашка'
 
 
 def unit_of(price_type: str) -> str:

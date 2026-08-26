@@ -264,7 +264,7 @@ async def work_chosen(callback: types.CallbackQuery, state: FSMContext):
 
     if price_type == SIDE_JOB_TYPE:
         prompt = f"📅 Дата: {format_date(data['work_date'])}\n" \
-                 f"💵 {info[1]} (шабашка)\n\nВведите сумму в рублях:"
+                 f"💵 {info[1]}\n\nВведите сумму в рублях:"
     elif price_type == 'square':
         prompt = f"📅 Дата: {format_date(data['work_date'])}\n" \
                  f"{info[1]} ({int(info[2])} руб/м²)\n\nВведите площадь (м²):"
@@ -306,7 +306,7 @@ async def quantity_entered(message: types.Message, state: FSMContext):
         await state.update_data(quantity=qty)
         await message.answer(
             f"💵 Сумма: {format_qty_unit(qty, price_type)}\n\n"
-            f"✏️ Опишите коротко, что за подработка (например: «сборка шкафа на выезде»):"
+            f"✏️ Опишите коротко, что за шабашка (например: «сборка шкафа на выезде»):"
         )
         await state.set_state(WorkEntry.entering_comment)
         return
@@ -340,7 +340,7 @@ async def quantity_entered(message: types.Message, state: FSMContext):
 async def side_job_comment_entered(message: types.Message, state: FSMContext):
     comment = message.text.strip()
     if len(comment) < 3:
-        await message.answer("❌ Напишите пару слов о подработке (минимум 3 символа).")
+        await message.answer("❌ Напишите пару слов о шабашке (минимум 3 символа).")
         return
     comment = comment[:200]
 
@@ -357,7 +357,7 @@ async def side_job_comment_entered(message: types.Message, state: FSMContext):
         await message.answer(
             f"⚠️ Внимание! Большая сумма!\n\n"
             f"📅 Дата: {format_date(data.get('work_date', date.today().isoformat()))}\n"
-            f"💵 Подработка: {format_qty_unit(qty, SIDE_JOB_TYPE)}\n"
+            f"💵 {data['work_info']['name']}: {format_qty_unit(qty, SIDE_JOB_TYPE)}\n"
             f"📝 {comment}\n\nВсё верно?",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
         )
