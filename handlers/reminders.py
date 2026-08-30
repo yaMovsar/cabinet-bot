@@ -78,15 +78,15 @@ async def reminder_action(callback: types.CallbackQuery, state: FSMContext):
 
     if action == "toggle_evening":
         new_val = not settings['evening_enabled']
-        await update_reminder_settings(evening_enabled=int(new_val))
+        await update_reminder_settings(evening_enabled=bool(new_val))
         await callback.answer(f"Вечернее: {'ВКЛ' if new_val else 'ВЫКЛ'}")
     elif action == "toggle_late":
         new_val = not settings['late_enabled']
-        await update_reminder_settings(late_enabled=int(new_val))
+        await update_reminder_settings(late_enabled=bool(new_val))
         await callback.answer(f"Позднее: {'ВКЛ' if new_val else 'ВЫКЛ'}")
     elif action == "toggle_report":
         new_val = not settings['report_enabled']
-        await update_reminder_settings(report_enabled=int(new_val))
+        await update_reminder_settings(report_enabled=bool(new_val))
         await callback.answer(f"Отчёт: {'ВКЛ' if new_val else 'ВЫКЛ'}")
     elif action == "toggle_month_end":
         new_val = not settings.get('month_end_enabled', True)

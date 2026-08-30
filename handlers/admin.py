@@ -396,7 +396,11 @@ async def edit_price_start(message: types.Message, state: FSMContext):
         await message.answer("⚠️ Пусто.")
         return
     buttons = [[InlineKeyboardButton(text=f"{ce} {n} — {int(p)} руб",
-                callback_data=f"ep:{c}")] for c, n, p, pt, cc, cn, ce in items]
+                callback_data=f"ep:{c}")]
+               for c, n, p, pt, cc, cn, ce in items if pt != SIDE_JOB_TYPE]
+    if not buttons:
+        await message.answer("⚠️ Пусто.")
+        return
     await message.answer("Позиция:", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
     await state.set_state(AdminEditPrice.choosing_item)
 
@@ -520,7 +524,8 @@ async def del_work_start(message: types.Message, state: FSMContext):
         await message.answer("📄 Пусто.")
         return
     buttons = [[InlineKeyboardButton(text=f"{ce} {n} — {int(p)} руб",
-                callback_data=f"dw:{c}")] for c, n, p, pt, cc, cn, ce in items]
+                callback_data=f"dw:{c}")]
+               for c, n, p, pt, cc, cn, ce in items if pt != SIDE_JOB_TYPE]
     buttons.append([InlineKeyboardButton(text="❌ Отмена", callback_data="cdel")])
     await message.answer("Удалить:", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
     await state.set_state(AdminDeleteWork.choosing)
