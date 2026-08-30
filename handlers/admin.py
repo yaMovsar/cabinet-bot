@@ -692,11 +692,13 @@ async def admin_entries_choose_month(callback: types.CallbackQuery, state: FSMCo
 
 
 @router.callback_query(F.data.startswith("ae_month:"), AdminManageEntries.choosing_month)
-async def admin_entries_show(callback: types.CallbackQuery, state: FSMContext):
+async def admin_entries_show(callback: types.CallbackQuery, state: FSMContext,
+                             year: int = None, month: int = None):
     """Показывает записи работника за выбранный месяц"""
-    parts = callback.data.split(":")
-    year = int(parts[1])
-    month = int(parts[2])
+    if year is None or month is None:
+        parts = callback.data.split(":")
+        year = int(parts[1])
+        month = int(parts[2])
     
     data = await state.get_data()
     wid = data["worker_id"]
@@ -830,9 +832,8 @@ async def admin_entry_action(callback: types.CallbackQuery, state: FSMContext):
         data = await state.get_data()
         year = data.get("year", date.today().year)
         month = data.get("month", date.today().month)
-        callback.data = f"ae_month:{year}:{month}"
         await state.set_state(AdminManageEntries.choosing_month)
-        await admin_entries_show(callback, state)
+        await admin_entries_show(callback, state, year, month)
         return
     
     await callback.answer()
