@@ -195,6 +195,15 @@ class AdminBroadcast(StatesGroup):
 
 # ==================== НАПОМИНАНИЯ ====================
 
+class AdminExpense(StatesGroup):
+    viewing = State()
+    choosing_name = State()
+    entering_name = State()
+    entering_amount = State()
+    choosing_recurring = State()
+    editing_amount = State()
+
+
 class AdminReminderSettings(StatesGroup):
     main_menu = State()
     entering_time = State()

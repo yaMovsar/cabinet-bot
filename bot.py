@@ -9,7 +9,8 @@ from config import BOT_TOKEN, ADMIN_ID
 from database import (
     init_db, close_db, get_reminder_settings,
     get_workers_without_records, get_all_workers_daily_summary,
-    get_inactive_workers, get_active_workers, get_monthly_total
+    get_inactive_workers, get_active_workers, get_monthly_total,
+    rollover_recurring_expenses, get_month_cash_need
 )
 from handlers import setup_routers
 from handlers.reminders import set_scheduler
@@ -55,7 +56,8 @@ async def send_backup(chat_id=None):
             backup_data = {}
             
             tables = ['categories', 'workers', 'price_list', 'worker_categories', 
-                      'work_log', 'advances', 'penalties', 'reminder_settings']
+                      'work_log', 'advances', 'penalties', 'reminder_settings',
+                      'expenses']
             
             for table in tables:
                 rows = await pg.fetch(f"SELECT * FROM {table}")
@@ -134,6 +136,29 @@ async def send_late_reminder():
             logging.error(f"Late {name}: {e}")
 
 
+async def rollover_expenses():
+    """1-го числа переносим постоянные расходы (аренда, свет) в новый месяц"""
+    created = await rollover_recurring_expenses()
+    if not created:
+        return
+    try:
+        await bot.send_message(
+            ADMIN_ID,
+            f"🧾 Новый месяц: перенёс постоянные расходы ({created} шт.)\n\n"
+            f"Суммы взяты из прошлого месяца — проверьте и поправьте, "
+            f"если аренда или свет изменились: «💰 Деньги» → «🧾 Расходы»."
+        )
+    except Exception as e:
+        logging.error(f"Rollover notify: {e}")
+
+
+async def safe_rollover_expenses():
+    try:
+        await rollover_expenses()
+    except Exception as e:
+        logging.exception(f"Rollover expenses failed: {e}")
+
+
 async def send_month_end_reminder():
     """
     Последние 3 дня месяца: напоминаем внести все записи.
@@ -176,15 +201,21 @@ async def send_month_end_reminder():
             logging.error(f"Month-end reminder {name}: {e}")
 
     try:
+        need = await get_month_cash_need()
+        money = lambda v: f"{int(v):,}".replace(",", " ")
         await bot.send_message(
             ADMIN_ID,
             f"📢 Напоминание о закрытии месяца отправлено\n"
             f"✅ Доставлено: {sent}\n"
             f"❌ Не доставлено: {failed}\n"
-            f"📅 Дней до конца месяца: {days_left}"
+            f"📅 Дней до конца месяца: {days_left}\n\n"
+            f"💰 Сколько готовить денег:\n"
+            f"👷 Зарплата: {money(need['salary'])} ₽\n"
+            f"🧾 Расходы цеха: {money(need['expenses'])} ₽\n"
+            f"📦 ВСЕГО: {money(need['total'])} ₽"
         )
-    except Exception:
-        pass
+    except Exception as e:
+        logging.error(f"Month-end admin summary: {e}")
 
 
 async def send_admin_report():
@@ -335,6 +366,13 @@ async def main():
 
     # Проверка неактивных работников — каждый день в 12:00
     scheduler.add_job(safe_check_inactive, "cron", hour=12, minute=0, id='inactive_check')
+
+    # Перенос постоянных расходов — 1-го числа в 00:30
+    scheduler.add_job(safe_rollover_expenses, "cron", day=1, hour=0, minute=30,
+                      id='expenses_rollover')
+
+    # Догоняем перенос, если 1-е число бот проспал (был выключен)
+    await safe_rollover_expenses()
     
     scheduler.start()
     

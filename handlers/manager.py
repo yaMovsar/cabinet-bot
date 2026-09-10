@@ -207,7 +207,7 @@ async def manager_shop_report_format(callback: types.CallbackQuery, state: FSMCo
                 await state.clear()
                 return
             workers_data.sort(key=lambda x: x['balance'], reverse=True)
-            fn = await generate_salary_report(year, month, workers_data)
+            fn = await generate_salary_report(year, month, workers_data)  # расходы — только у админа
             total_pay = sum(w['balance'] for w in workers_data)
             await callback.message.answer_document(
                 FSInputFile(fn, filename=f"cex_{MONTHS_RU[month]}_{year}.xlsx"),

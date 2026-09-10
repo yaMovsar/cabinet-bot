@@ -18,6 +18,7 @@ from utils import (
 )
 from handlers.filters import StaffFilter, AdminFilter
 from reports import generate_monthly_report, generate_worker_report, generate_salary_report
+from database import get_expenses, get_expenses_total
 
 router = Router()
 
@@ -313,14 +314,18 @@ async def salary_month_chosen(callback: types.CallbackQuery, state: FSMContext):
         # Сортируем по убыванию суммы к выплате (самые большие сверху)
         workers_data.sort(key=lambda x: x['balance'], reverse=True)
 
-        fn = await generate_salary_report(year, month, workers_data)
+        expenses = await get_expenses(year, month)
+        expenses_total = await get_expenses_total(year, month)
+        fn = await generate_salary_report(year, month, workers_data, expenses)
 
         total_pay = sum(w['balance'] for w in workers_data)
         caption = (
             f"💸 Ведомость зарплаты\n"
             f"📅 {MONTHS_RU[month]} {year}\n\n"
             f"👥 Работников: {len(workers_data)}\n"
-            f"💼 Итого к выплате: {int(total_pay):,} руб"
+            f"💼 Зарплата: {int(total_pay):,} руб\n"
+            f"🧾 Расходы цеха: {int(expenses_total):,} руб\n"
+            f"📦 ВСЕГО ГОТОВИТЬ: {int(total_pay + expenses_total):,} руб"
         )
 
         await callback.message.answer_document(

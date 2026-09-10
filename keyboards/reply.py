@@ -90,13 +90,16 @@ def get_info_keyboard():
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
 
 
-def get_money_keyboard():
+def get_money_keyboard(user_id=None):
     buttons = [
         [KeyboardButton(text="💳 Выдать аванс"),
          KeyboardButton(text="💳 Удалить аванс")],
         [KeyboardButton(text="⚠️ Выписать штраф"),
          KeyboardButton(text="⚠️ Удалить штраф")],
         [KeyboardButton(text="📊 Сводка работников")],
-        [KeyboardButton(text="🔙 В админ-панель")],
     ]
+    if user_id is None or user_id == ADMIN_ID:
+        buttons.append([KeyboardButton(text="🧾 Расходы"),
+                        KeyboardButton(text="💰 Сколько готовить денег")])
+    buttons.append([KeyboardButton(text="🔙 В админ-панель")])
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)

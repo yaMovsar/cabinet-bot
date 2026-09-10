@@ -397,7 +397,8 @@ async def generate_worker_report(worker_id, worker_name, year=None, month=None):
     return filename
 
 
-async def generate_salary_report(year: int, month: int, workers_data: list) -> str:
+async def generate_salary_report(year: int, month: int, workers_data: list,
+                                 expenses: list = None) -> str:
     """
     Ведомость выплаты зарплаты + сверка кассы.
     workers_data: список dict с ключами name, work_summary, fixed_salary,
@@ -410,7 +411,11 @@ async def generate_salary_report(year: int, month: int, workers_data: list) -> s
 
     Графы «Наличными» и «Перевод» заполняются вручную — «Выплачено», «Остаток»,
     итоги и сверка кассы пересчитываются формулами Excel автоматически.
+
+    expenses: расходы цеха из БД — (id, name, amount, date, comment, is_recurring).
+    Подставляются в блок «РАСХОДЫ»; ниже остаются пустые строки для правок вручную.
     """
+    expenses = expenses or []
     s = _styles()
     money_fmt = '#,##0.00 ₽'
     green_fill = PatternFill(start_color="E2EFDA", end_color="E2EFDA", fill_type="solid")
@@ -498,16 +503,30 @@ async def generate_salary_report(year: int, month: int, workers_data: list) -> s
         ws.cell(row=exp_header, column=col_idx).fill = s["th_fill"]
     _cell(ws, exp_header, 8, "Сумма", s, font=s["th_font"], fill=s["th_fill"], center=True)
 
-    EXP_ROWS = 10
+    BLANK_ROWS = 5                       # запас строк «дописать вручную»
     exp_first = exp_header + 1
-    exp_last = exp_first + EXP_ROWS - 1
-    for r in range(exp_first, exp_last + 1):
+    exp_last = exp_first + len(expenses) + BLANK_ROWS - 1
+    for idx, r in enumerate(range(exp_first, exp_last + 1)):
+        from_db = idx < len(expenses)
+        fill = green_fill if from_db else input_fill
         ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=7)
-        _cell(ws, r, 1, None, s, fill=input_fill)          # название — вручную
+
+        if from_db:
+            _name = expenses[idx][1]
+            _amount = expenses[idx][2]
+            _comment = expenses[idx][4] if len(expenses[idx]) > 4 else ''
+            _recurring = expenses[idx][5] if len(expenses[idx]) > 5 else False
+            label = f"{'🔁 ' if _recurring else ''}{_name}"
+            if _comment:
+                label += f" ({_comment})"
+        else:
+            label, _amount = None, None
+
+        _cell(ws, r, 1, label, s, fill=fill)
         for col_idx in range(2, 8):
-            ws.cell(row=r, column=col_idx).fill = input_fill
+            ws.cell(row=r, column=col_idx).fill = fill
             ws.cell(row=r, column=col_idx).border = s["border"]
-        _cell(ws, r, 8, None, s, fill=input_fill, fmt=money_fmt, center=True)  # сумма — вручную
+        _cell(ws, r, 8, _amount, s, fill=fill, fmt=money_fmt, center=True)
 
     exp_total = exp_last + 1
     ws.merge_cells(start_row=exp_total, start_column=1, end_row=exp_total, end_column=7)

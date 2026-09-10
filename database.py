@@ -100,6 +100,17 @@ async def init_db():
             )
         """)
         await conn.execute("""
+            CREATE TABLE IF NOT EXISTS expenses (
+                id SERIAL PRIMARY KEY,
+                name TEXT NOT NULL,
+                amount REAL NOT NULL,
+                expense_date DATE NOT NULL,
+                comment TEXT DEFAULT '',
+                is_recurring BOOLEAN NOT NULL DEFAULT FALSE,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        await conn.execute("""
             CREATE TABLE IF NOT EXISTS reminder_settings (
                 id INTEGER PRIMARY KEY DEFAULT 1,
                 evening_hour INTEGER DEFAULT 18,
@@ -169,6 +180,7 @@ async def init_db():
         await conn.execute("CREATE INDEX IF NOT EXISTS idx_advances_worker_date ON advances(worker_id, advance_date)")
         await conn.execute("CREATE INDEX IF NOT EXISTS idx_penalties_worker_date ON penalties(worker_id, penalty_date)")
         await conn.execute("CREATE INDEX IF NOT EXISTS idx_worker_categories ON worker_categories(worker_id, category_code)")
+        await conn.execute("CREATE INDEX IF NOT EXISTS idx_expenses_date ON expenses(expense_date)")
 
     await ensure_side_job_items()
 
@@ -1137,6 +1149,150 @@ async def delete_penalty(penalty_id: int):
 
 
 # ==================== НАСТРОЙКИ НАПОМИНАНИЙ ====================
+
+# ==================== РАСХОДЫ ЦЕХА ====================
+
+async def add_expense(name: str, amount: float, expense_date=None,
+                      comment: str = '', is_recurring: bool = False) -> int:
+    """Расход цеха: аренда, свет, материалы и т.д."""
+    expense_date = parse_date(expense_date)
+    async with pool.acquire() as conn:
+        return await conn.fetchval("""
+            INSERT INTO expenses (name, amount, expense_date, comment, is_recurring)
+            VALUES ($1, $2, $3, $4, $5) RETURNING id
+        """, name, amount, expense_date, comment or '', bool(is_recurring))
+
+
+async def get_expenses(year: int = None, month: int = None):
+    """Расходы за месяц: (id, name, amount, date, comment, is_recurring)"""
+    if year is None:
+        year = date.today().year
+    if month is None:
+        month = date.today().month
+    async with pool.acquire() as conn:
+        rows = await conn.fetch("""
+            SELECT id, name, amount, expense_date::TEXT, COALESCE(comment, ''), is_recurring
+            FROM expenses
+            WHERE EXTRACT(YEAR FROM expense_date) = $1
+              AND EXTRACT(MONTH FROM expense_date) = $2
+            ORDER BY is_recurring DESC, expense_date, id
+        """, year, month)
+        return [tuple(row) for row in rows]
+
+
+async def get_expenses_total(year: int = None, month: int = None) -> float:
+    if year is None:
+        year = date.today().year
+    if month is None:
+        month = date.today().month
+    async with pool.acquire() as conn:
+        total = await conn.fetchval("""
+            SELECT COALESCE(SUM(amount), 0) FROM expenses
+            WHERE EXTRACT(YEAR FROM expense_date) = $1
+              AND EXTRACT(MONTH FROM expense_date) = $2
+        """, year, month)
+        return float(total or 0)
+
+
+async def get_expense_by_id(expense_id: int):
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow("""
+            SELECT id, name, amount, expense_date::TEXT, COALESCE(comment, ''), is_recurring
+            FROM expenses WHERE id = $1
+        """, expense_id)
+        return tuple(row) if row else None
+
+
+async def update_expense_amount(expense_id: int, new_amount: float) -> bool:
+    async with pool.acquire() as conn:
+        result = await conn.execute(
+            "UPDATE expenses SET amount = $1 WHERE id = $2", new_amount, expense_id)
+        return result.endswith('1')
+
+
+async def set_expense_recurring(expense_id: int, is_recurring: bool) -> bool:
+    async with pool.acquire() as conn:
+        result = await conn.execute(
+            "UPDATE expenses SET is_recurring = $1 WHERE id = $2",
+            bool(is_recurring), expense_id)
+        return result.endswith('1')
+
+
+async def delete_expense(expense_id: int):
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "DELETE FROM expenses WHERE id = $1 RETURNING name, amount", expense_id)
+        return tuple(row) if row else None
+
+
+async def rollover_recurring_expenses(year: int = None, month: int = None) -> int:
+    """
+    Переносит постоянные расходы (аренда, свет...) в указанный месяц
+    с суммами прошлого месяца. Идемпотентно: расход с таким же названием
+    в целевом месяце повторно не создаётся. Возвращает число созданных.
+    """
+    today = date.today()
+    year = year or today.year
+    month = month or today.month
+    prev_year, prev_month = (year - 1, 12) if month == 1 else (year, month - 1)
+
+    async with pool.acquire() as conn:
+        template = await conn.fetch("""
+            SELECT DISTINCT ON (lower(name)) name, amount, comment
+            FROM expenses
+            WHERE is_recurring = TRUE
+              AND EXTRACT(YEAR FROM expense_date) = $1
+              AND EXTRACT(MONTH FROM expense_date) = $2
+            ORDER BY lower(name), expense_date DESC, id DESC
+        """, prev_year, prev_month)
+        if not template:
+            return 0
+
+        existing = await conn.fetch("""
+            SELECT lower(name) AS name FROM expenses
+            WHERE EXTRACT(YEAR FROM expense_date) = $1
+              AND EXTRACT(MONTH FROM expense_date) = $2
+        """, year, month)
+        existing_names = {r['name'] for r in existing}
+
+        created = 0
+        for row in template:
+            if row['name'].lower() in existing_names:
+                continue
+            await conn.execute("""
+                INSERT INTO expenses (name, amount, expense_date, comment, is_recurring)
+                VALUES ($1, $2, $3, $4, TRUE)
+            """, row['name'], row['amount'], date(year, month, 1), row['comment'] or '')
+            created += 1
+        return created
+
+
+async def get_month_cash_need(year: int = None, month: int = None) -> dict:
+    """
+    Сколько денег нужно подготовить: зарплата к выплате + расходы цеха.
+    """
+    today = date.today()
+    year = year or today.year
+    month = month or today.month
+
+    salary_total = 0.0
+    workers = await get_all_workers()
+    for tid, _name in workers:
+        stats = await get_worker_full_stats(tid, year, month)
+        if stats['balance'] > 0:
+            salary_total += stats['balance']
+
+    expenses_total = await get_expenses_total(year, month)
+    return {
+        'salary': salary_total,
+        'expenses': expenses_total,
+        'total': salary_total + expenses_total,
+        'year': year,
+        'month': month,
+    }
+
+
+# ==================== НАПОМИНАНИЯ ====================
 
 async def get_reminder_settings():
     async with pool.acquire() as conn:

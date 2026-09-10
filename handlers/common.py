@@ -126,8 +126,8 @@ async def menu_info(message: types.Message, state: FSMContext):
 async def menu_money(message: types.Message, state: FSMContext):
     await state.clear()
     await message.answer(
-        "💰 Раздел Деньги\n\n💳 — Авансы\n⚠️ — Штрафы\n💰 — Баланс\n📊 — Заработок\n🏆 — Рейтинг",
-        reply_markup=get_money_keyboard()
+        "💰 Раздел Деньги\n\n💳 — Авансы\n⚠️ — Штрафы\n🧾 — Расходы цеха\n📊 — Сводка",
+        reply_markup=get_money_keyboard(message.from_user.id)
     )
 
 
