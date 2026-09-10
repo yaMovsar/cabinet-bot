@@ -7,7 +7,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from config import BOT_TOKEN, ADMIN_ID
 from database import (
-    init_db, close_db, get_reminder_settings,
+    init_db, close_db, get_reminder_settings, load_role_sets,
     get_workers_without_records, get_all_workers_daily_summary,
     get_inactive_workers, get_active_workers, get_monthly_total,
     rollover_recurring_expenses, get_month_cash_need
@@ -15,7 +15,7 @@ from database import (
 from handlers import setup_routers
 from handlers.reminders import set_scheduler
 from middlewares import RoleMiddleware
-from utils import MONTHS_RU, days_left_in_month
+from utils import MONTHS_RU, days_left_in_month, apply_roles
 
 logging.basicConfig(level=logging.INFO)
 
@@ -327,6 +327,11 @@ async def reschedule_reminders():
 async def main():
     # Инициализация БД (PostgreSQL)
     await init_db()
+
+    # Роли участников — в кеш, чтобы фильтры отвечали без запросов к базе
+    admins, managers = await load_role_sets()
+    apply_roles(admins, managers)
+    logging.info(f"Роли загружены: админов {len(admins)}, управляющих {len(managers)}")
     
     # Подключение middleware
     dp.message.middleware(RoleMiddleware())

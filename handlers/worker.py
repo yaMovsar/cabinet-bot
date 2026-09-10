@@ -5,7 +5,8 @@ from aiogram import Router, types, F, Bot
 from aiogram.fsm.context import FSMContext
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
-from config import ADMIN_ID, MANAGER_IDS, BOT_TOKEN
+from config import ADMIN_ID, BOT_TOKEN
+from utils.roles import is_staff
 from database import (
     get_price_list_for_worker, get_worker_categories,
     add_work, get_daily_total, get_monthly_total,
@@ -47,7 +48,7 @@ def is_today(date_value) -> bool:
 
 
 def can_edit_entry(created_at_str, user_id, work_date=None) -> bool:
-    if user_id == ADMIN_ID or user_id in MANAGER_IDS:
+    if is_staff(user_id):
         return True
     if work_date is not None and not is_month_open(work_date):
         return False

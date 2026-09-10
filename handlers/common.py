@@ -4,7 +4,8 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
-from config import ADMIN_ID, MANAGER_IDS
+from config import ADMIN_ID
+from utils.roles import is_admin, is_manager
 from database import add_worker, worker_exists, get_all_workers
 from keyboards import (
     get_main_keyboard, get_admin_keyboard, get_manager_keyboard,
@@ -45,7 +46,7 @@ async def cmd_start(message: types.Message, state: FSMContext, is_admin: bool, i
     elif is_manager:
         text = (
             f"Привет, {message.from_user.first_name}! 👋\n"
-            "Вы — менеджер. Доступны отчёты и управление деньгами."
+            "Вы — управляющий. Доступны отчёты, авансы и штрафы."
         )
     else:
         text = (
@@ -89,7 +90,7 @@ async def admin_panel(message: types.Message, state: FSMContext, is_admin: bool,
     )
 
 
-@router.message(F.text == "💼 Кабинет Эльмурзы")
+@router.message(F.text.in_({"💼 Кабинет управляющего", "💼 Кабинет Эльмурзы"}))
 async def manager_panel(message: types.Message, state: FSMContext, is_manager: bool, **kwargs):
     if not is_manager:
         await message.answer("⛔ Нет доступа.")
@@ -135,9 +136,9 @@ async def menu_money(message: types.Message, state: FSMContext):
 async def back_to_admin_panel(message: types.Message, state: FSMContext):
     await state.clear()
     uid = message.from_user.id
-    if uid == ADMIN_ID:
+    if is_admin(uid):
         await message.answer("🖥 Админ-панель", reply_markup=get_admin_keyboard())
-    elif uid in MANAGER_IDS:
+    elif is_manager(uid):
         await message.answer("📊 Панель отчётов", reply_markup=get_manager_keyboard())
     else:
         await message.answer("🏠 Главное меню", reply_markup=get_main_keyboard(uid))

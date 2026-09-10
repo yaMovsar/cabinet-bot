@@ -1,5 +1,5 @@
 ﻿from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
-from config import ADMIN_ID, MANAGER_IDS
+from utils.roles import is_admin, is_manager
 
 
 def get_main_keyboard(user_id=None):
@@ -11,10 +11,10 @@ def get_main_keyboard(user_id=None):
         [KeyboardButton(text="💳 Мой баланс"),
          KeyboardButton(text="💬 Написать вопрос")]
     ]
-    if user_id and user_id == ADMIN_ID:
+    if user_id and is_admin(user_id):
         buttons.append([KeyboardButton(text="🖥 Админ-панель")])
-    elif user_id and user_id in MANAGER_IDS:
-        buttons.append([KeyboardButton(text="💼 Кабинет Эльмурзы")])
+    elif user_id and is_manager(user_id):
+        buttons.append([KeyboardButton(text="💼 Кабинет управляющего")])
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
 
 
@@ -30,7 +30,8 @@ def get_admin_keyboard():
          KeyboardButton(text="💾 Бэкап БД")],
         [KeyboardButton(text="⏰ Напоминания"),
          KeyboardButton(text="📂 Справочники")],
-        [KeyboardButton(text="📢 Рассылка")],
+        [KeyboardButton(text="📢 Рассылка"),
+         KeyboardButton(text="👥 Роли")],
         [KeyboardButton(text="🔙 Назад")],
     ]
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
@@ -98,7 +99,7 @@ def get_money_keyboard(user_id=None):
          KeyboardButton(text="⚠️ Удалить штраф")],
         [KeyboardButton(text="📊 Сводка работников")],
     ]
-    if user_id is None or user_id == ADMIN_ID:
+    if user_id is None or is_admin(user_id):
         buttons.append([KeyboardButton(text="🧾 Расходы"),
                         KeyboardButton(text="💰 Сколько готовить денег")])
     buttons.append([KeyboardButton(text="🔙 В админ-панель")])

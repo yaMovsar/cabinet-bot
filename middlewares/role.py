@@ -1,6 +1,6 @@
 from aiogram import BaseMiddleware
 from aiogram.types import TelegramObject
-from config import ADMIN_ID, MANAGER_IDS
+from utils.roles import is_admin, is_manager, is_staff, is_owner
 
 
 class RoleMiddleware(BaseMiddleware):
@@ -8,11 +8,13 @@ class RoleMiddleware(BaseMiddleware):
         user = data.get("event_from_user")
         if user:
             uid = user.id
-            data["is_admin"] = uid == ADMIN_ID
-            data["is_manager"] = uid in MANAGER_IDS
-            data["is_staff"] = uid == ADMIN_ID or uid in MANAGER_IDS
+            data["is_admin"] = is_admin(uid)
+            data["is_manager"] = is_manager(uid)
+            data["is_staff"] = is_staff(uid)
+            data["is_owner"] = is_owner(uid)
         else:
             data["is_admin"] = False
             data["is_manager"] = False
             data["is_staff"] = False
+            data["is_owner"] = False
         return await handler(event, data)

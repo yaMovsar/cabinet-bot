@@ -158,6 +158,10 @@ async def init_db():
             ALTER TABLE work_log
             ADD COLUMN IF NOT EXISTS comment TEXT DEFAULT ''
         """)
+        await conn.execute("""
+            ALTER TABLE workers
+            ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'worker'
+        """)
         for col, default in (
             ('month_end_enabled', 'TRUE'),
             ('month_end_hour', '12'),
@@ -321,6 +325,47 @@ async def get_active_workers():
         rows = await conn.fetch(
             "SELECT telegram_id, name FROM workers WHERE is_ghost = FALSE AND telegram_id > 0 ORDER BY name")
         return [tuple(row) for row in rows]
+
+
+async def set_worker_role(telegram_id: int, role: str) -> bool:
+    """Роль: worker | manager | admin"""
+    async with pool.acquire() as conn:
+        result = await conn.execute(
+            "UPDATE workers SET role = $1 WHERE telegram_id = $2", role, telegram_id)
+        return result.endswith('1')
+
+
+async def get_worker_role(telegram_id: int) -> str:
+    async with pool.acquire() as conn:
+        role = await conn.fetchval(
+            "SELECT role FROM workers WHERE telegram_id = $1", telegram_id)
+        return role or 'worker'
+
+
+async def get_workers_with_roles():
+    """Все реальные (не 👻) работники: (telegram_id, name, role)"""
+    async with pool.acquire() as conn:
+        rows = await conn.fetch("""
+            SELECT telegram_id, name, COALESCE(role, 'worker')
+            FROM workers
+            WHERE is_ghost = FALSE AND telegram_id > 0
+            ORDER BY
+                CASE COALESCE(role, 'worker')
+                    WHEN 'admin' THEN 0 WHEN 'manager' THEN 1 ELSE 2 END,
+                name
+        """)
+        return [tuple(row) for row in rows]
+
+
+async def load_role_sets():
+    """(admins, managers) для кеша ролей"""
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT telegram_id, COALESCE(role, 'worker') AS role FROM workers "
+            "WHERE role IN ('admin', 'manager')")
+    admins = {r['telegram_id'] for r in rows if r['role'] == 'admin'}
+    managers = {r['telegram_id'] for r in rows if r['role'] == 'manager'}
+    return admins, managers
 
 
 async def get_worker(telegram_id: int):

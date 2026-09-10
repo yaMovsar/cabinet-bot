@@ -195,6 +195,10 @@ class AdminBroadcast(StatesGroup):
 
 # ==================== НАПОМИНАНИЯ ====================
 
+class AdminRoles(StatesGroup):
+    viewing = State()
+
+
 class AdminExpense(StatesGroup):
     viewing = State()
     choosing_name = State()
