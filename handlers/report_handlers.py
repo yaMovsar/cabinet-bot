@@ -249,7 +249,8 @@ def _salary_month_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
-@router.message(F.text == "💸 Выдать зарплату", AdminFilter())
+# Доступно и управляющему — ему тоже нужна ведомость и сумма «сколько готовить»
+@router.message(F.text == "💸 Выдать зарплату", StaffFilter())
 async def salary_payout_start(message: types.Message, state: FSMContext):
     await state.clear()
     await message.answer(

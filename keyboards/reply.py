@@ -39,7 +39,8 @@ def get_admin_keyboard():
 
 def get_manager_keyboard():
     buttons = [
-        [KeyboardButton(text="📁 Сводка день")],
+        [KeyboardButton(text="📁 Сводка день"),
+         KeyboardButton(text="💸 Выдать зарплату")],
         [KeyboardButton(text="👤 Отчёт по сотрудникам"),
          KeyboardButton(text="🏭 Отчёт по цеху")],
         [KeyboardButton(text="💰 Деньги")],
