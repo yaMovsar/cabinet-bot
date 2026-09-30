@@ -715,6 +715,7 @@ async def admin_entries_show(callback: types.CallbackQuery, state: FSMContext,
     
     if not entries:
         buttons = [
+            [InlineKeyboardButton(text="➕ Добавить запись", callback_data="aea_start")],
             [InlineKeyboardButton(text="🔙 К месяцам", callback_data="ae_back_months")],
             [InlineKeyboardButton(text="❌ Отмена", callback_data="ae_cancel")]
         ]
@@ -722,6 +723,7 @@ async def admin_entries_show(callback: types.CallbackQuery, state: FSMContext,
             f"📭 У {wname} нет записей за {MONTHS_RU[month]} {year}",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
         )
+        await state.set_state(AdminManageEntries.viewing_entries)
         await callback.answer()
         return
     
@@ -748,6 +750,9 @@ async def admin_entries_show(callback: types.CallbackQuery, state: FSMContext,
     
     text += f"\n💰 <b>Итого: {int(total_month):,} ₽</b>"
     
+    # записей может быть много — режем их, а не кнопки навигации
+    buttons = buttons[:40]
+    buttons.append([InlineKeyboardButton(text="➕ Добавить запись", callback_data="aea_start")])
     buttons.append([InlineKeyboardButton(text="🔙 К месяцам", callback_data="ae_back_months")])
     buttons.append([InlineKeyboardButton(text="❌ Отмена", callback_data="ae_cancel")])
     
@@ -756,7 +761,7 @@ async def admin_entries_show(callback: types.CallbackQuery, state: FSMContext,
     
     await callback.message.edit_text(
         text,
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons[:25]),
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons),
         parse_mode="HTML"
     )
     await state.set_state(AdminManageEntries.viewing_entries)

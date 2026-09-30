@@ -86,6 +86,13 @@ class AdminManageEntries(StatesGroup):
     choosing_action = State()
     entering_new_quantity = State()
     confirming_delete = State()
+    # админ добавляет запись за работника
+    add_choosing_date = State()
+    add_choosing_category = State()
+    add_choosing_work = State()
+    add_entering_qty = State()
+    add_entering_comment = State()
+    add_confirming = State()
 
 
 class AdminEditCategory(StatesGroup):
