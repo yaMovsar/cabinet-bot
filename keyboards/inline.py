@@ -2,7 +2,7 @@ from datetime import date, timedelta
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 
-def make_date_picker(callback_prefix: str, cancel_callback: str = "cancel"):
+def make_date_picker(callback_prefix: str, cancel_callback: str = "cancel", allow_past_month: bool = False):
     today = date.today()
     yesterday = today - timedelta(days=1)
     rows = [[InlineKeyboardButton(
@@ -10,7 +10,8 @@ def make_date_picker(callback_prefix: str, cancel_callback: str = "cancel"):
         callback_data=f"{callback_prefix}:{today.isoformat()}"
     )]]
     # прошлый месяц закрыт — «вчера» показываем только внутри текущего месяца
-    if yesterday.month == today.month:
+    # (админу — всегда, ему можно дописывать закрытый месяц)
+    if allow_past_month or yesterday.month == today.month:
         rows.append([InlineKeyboardButton(
             text=f"📅 Вчера ({yesterday.strftime('%d.%m')})",
             callback_data=f"{callback_prefix}:{yesterday.isoformat()}"

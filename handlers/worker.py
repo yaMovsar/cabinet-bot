@@ -6,7 +6,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from config import ADMIN_ID, BOT_TOKEN
-from utils.roles import is_staff
+from utils.roles import is_staff, is_admin
 from database import (
     get_price_list_for_worker, get_worker_categories,
     add_work, get_daily_total, get_monthly_total,
@@ -81,16 +81,21 @@ async def _restart_date_step(callback: types.CallbackQuery, state: FSMContext) -
         await callback.message.edit_text(
             "⚠️ Сессия сброшена (бот перезапускался).\n\n"
             "📅 За какой день записать работу?",
-            reply_markup=make_date_picker("wdate", "cancel")
+            reply_markup=_date_picker(callback.from_user.id)
         )
     except Exception:
         await callback.message.answer(
             "⚠️ Сессия сброшена (бот перезапускался).\n\n"
             "📅 За какой день записать работу?",
-            reply_markup=make_date_picker("wdate", "cancel")
+            reply_markup=_date_picker(callback.from_user.id)
         )
     await state.set_state(WorkEntry.choosing_date)
     await callback.answer()
+
+
+def _date_picker(user_id: int):
+    """Выбор даты записи: админ может писать и в закрытый месяц"""
+    return make_date_picker("wdate", "cancel", allow_past_month=is_admin(user_id))
 
 
 def _no_edit_reason(entry) -> str:
@@ -112,7 +117,7 @@ async def start_work_entry(message: types.Message, state: FSMContext):
         return
     await message.answer(
         "📅 За какой день записать работу?",
-        reply_markup=make_date_picker("wdate", "cancel")
+        reply_markup=_date_picker(message.from_user.id)
     )
     await state.set_state(WorkEntry.choosing_date)
 
@@ -127,11 +132,11 @@ async def work_date_chosen(callback: types.CallbackQuery, state: FSMContext):
         await state.set_state(WorkEntry.entering_custom_date)
         await callback.answer()
         return
-    if not is_month_open(value):
+    if not is_month_open(value) and not is_admin(callback.from_user.id):
         await callback.answer("🔒 Прошлый месяц закрыт", show_alert=True)
         await callback.message.edit_text(
             MONTH_CLOSED_TEXT + "\n\n📅 За какой день записать работу?",
-            reply_markup=make_date_picker("wdate", "cancel")
+            reply_markup=_date_picker(callback.from_user.id)
         )
         return
     await state.update_data(work_date=value)
@@ -148,7 +153,7 @@ async def custom_date_entered(message: types.Message, state: FSMContext):
     if chosen > date.today():
         await message.answer("❌ Нельзя записать на будущую дату!")
         return
-    if not is_month_open(chosen):
+    if not is_month_open(chosen) and not is_admin(message.from_user.id):
         await message.answer(MONTH_CLOSED_TEXT)
         return
 
@@ -224,7 +229,7 @@ async def show_category_or_work(callback, state, chosen_date):
 async def work_back_to_dates(callback: types.CallbackQuery, state: FSMContext):
     await callback.message.edit_text(
         "📅 За какой день записать работу?",
-        reply_markup=make_date_picker("wdate", "cancel")
+        reply_markup=_date_picker(callback.from_user.id)
     )
     await state.set_state(WorkEntry.choosing_date)
     await callback.answer()
@@ -508,7 +513,7 @@ async def write_more(callback: types.CallbackQuery, state: FSMContext):
     await callback.message.edit_reply_markup(reply_markup=None)
     await callback.message.answer(
         "📅 За какой день записать работу?",
-        reply_markup=make_date_picker("wdate", "cancel")
+        reply_markup=_date_picker(callback.from_user.id)
     )
     await state.set_state(WorkEntry.choosing_date)
     await callback.answer()
