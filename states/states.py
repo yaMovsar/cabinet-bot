@@ -206,6 +206,10 @@ class AdminRoles(StatesGroup):
     viewing = State()
 
 
+class AdminBrigadeShare(StatesGroup):
+    entering_rate = State()
+
+
 class AdminExpense(StatesGroup):
     viewing = State()
     choosing_name = State()

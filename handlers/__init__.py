@@ -11,6 +11,7 @@ from .report_handlers import router as reports_router
 from .reminders import router as reminders_router
 from .broadcast import router as broadcast_router
 from .manager import router as manager_router
+from .brigade import router as brigade_router
 
 
 def setup_routers() -> Router:
@@ -27,5 +28,6 @@ def setup_routers() -> Router:
     main_router.include_router(reminders_router)
     main_router.include_router(broadcast_router)
     main_router.include_router(manager_router)
+    main_router.include_router(brigade_router)
 
     return main_router

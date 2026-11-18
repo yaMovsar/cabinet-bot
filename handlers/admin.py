@@ -790,17 +790,28 @@ async def admin_entry_chosen(callback: types.CallbackQuery, state: FSMContext):
                    f"💵 Расценка: {int(entry[3])} ₽/{unit_label}\n")
         edit_label = "✏️ Изменить кол-во"
 
-    buttons = [
-        [InlineKeyboardButton(text=edit_label, callback_data="ae_act:edit")],
-        [InlineKeyboardButton(text="🗑 Удалить", callback_data="ae_act:delete")],
-        [InlineKeyboardButton(text="🔙 К записям", callback_data="ae_act:back")]
-    ]
+    auto = len(entry) > 11 and entry[11] is not None
+    buttons = []
+    footer = ""
+    if auto:
+        # доля управляющего — правится только через запись работника
+        if comment:
+            details += f"🔗 {comment}\n"
+        footer = ("\n\n🔗 Доля управляющего — начислена автоматически.\n"
+                  "Меняется и удаляется вместе с записью работника.")
+    else:
+        buttons += [
+            [InlineKeyboardButton(text=edit_label, callback_data="ae_act:edit")],
+            [InlineKeyboardButton(text="🗑 Удалить", callback_data="ae_act:delete")],
+        ]
+    buttons.append([InlineKeyboardButton(text="🔙 К записям", callback_data="ae_act:back")])
     await callback.message.edit_text(
         f"📦 <b>{entry[1]}</b>\n\n"
         f"👤 {entry[7]}\n"
         f"📅 {format_date(entry[5])}\n"
         f"{details}"
-        f"💰 Сумма: {int(entry[4])} ₽",
+        f"💰 Сумма: {int(entry[4])} ₽"
+        f"{footer}",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons),
         parse_mode="HTML"
     )
@@ -812,7 +823,15 @@ async def admin_entry_chosen(callback: types.CallbackQuery, state: FSMContext):
 async def admin_entry_action(callback: types.CallbackQuery, state: FSMContext):
     """Обработка действия с записью"""
     action = callback.data.split(":")[1]
-    
+
+    if action in ("edit", "delete"):
+        data = await state.get_data()
+        entry = await get_entry_by_id(data.get("entry_id", 0))
+        if not entry or (len(entry) > 11 and entry[11] is not None):
+            await callback.answer(
+                "🔗 Доля управляющего меняется вместе с записью работника", show_alert=True)
+            return
+
     if action == "edit":
         data = await state.get_data()
         entry = await get_entry_by_id(data["entry_id"])

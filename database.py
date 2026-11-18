@@ -22,6 +22,12 @@ def parse_date(value):
     return date.today()
 
 
+# Название работы в записях: начисления управляющему помечены «(с бригады)»,
+# чтобы не путать их с его собственной работой того же вида.
+BRIGADE_SUFFIX = ' (с бригады)'
+WORK_NAME = f"(pl.name || CASE WHEN wl.parent_id IS NOT NULL THEN '{BRIGADE_SUFFIX}' ELSE '' END)"
+
+
 async def init_db():
     """Инициализация пула соединений и создание таблиц"""
     global pool
@@ -162,6 +168,24 @@ async def init_db():
             ALTER TABLE workers
             ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'worker'
         """)
+        # Доля управляющего: ставка за 1 ед. каждого вида работы, сделанной бригадой.
+        # Запись управляющего ссылается на запись работника (parent_id) — правится
+        # и удаляется вместе с ней.
+        await conn.execute("""
+            ALTER TABLE price_list
+            ADD COLUMN IF NOT EXISTS manager_rate REAL DEFAULT 0
+        """)
+        await conn.execute("""
+            ALTER TABLE work_log
+            ADD COLUMN IF NOT EXISTS parent_id INTEGER
+                REFERENCES work_log(id) ON DELETE CASCADE
+        """)
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS bot_settings (
+                key TEXT PRIMARY KEY,
+                value TEXT
+            )
+        """)
         for col, default in (
             ('month_end_enabled', 'TRUE'),
             ('month_end_hour', '12'),
@@ -185,6 +209,7 @@ async def init_db():
         await conn.execute("CREATE INDEX IF NOT EXISTS idx_penalties_worker_date ON penalties(worker_id, penalty_date)")
         await conn.execute("CREATE INDEX IF NOT EXISTS idx_worker_categories ON worker_categories(worker_id, category_code)")
         await conn.execute("CREATE INDEX IF NOT EXISTS idx_expenses_date ON expenses(expense_date)")
+        await conn.execute("CREATE INDEX IF NOT EXISTS idx_worklog_parent ON work_log(parent_id)")
 
     await ensure_side_job_items()
 
@@ -597,11 +622,149 @@ async def add_work(worker_id: int, work_code: str, quantity: float, price: float
     work_date = parse_date(work_date)
     total = quantity * price
     async with pool.acquire() as conn:
-        await conn.execute("""
-            INSERT INTO work_log (worker_id, work_code, quantity, price_per_unit, total, work_date, comment)
-            VALUES ($1, $2, $3, $4, $5, $6, $7)
-        """, worker_id, work_code, quantity, price, total, work_date, comment or '')
+        async with conn.transaction():
+            entry_id = await conn.fetchval("""
+                INSERT INTO work_log (worker_id, work_code, quantity, price_per_unit, total, work_date, comment)
+                VALUES ($1, $2, $3, $4, $5, $6, $7)
+                RETURNING id
+            """, worker_id, work_code, quantity, price, total, work_date, comment or '')
+            await _add_manager_share(conn, entry_id)
     return total
+
+
+# ==================== ДОЛЯ УПРАВЛЯЮЩЕГО ====================
+#
+# Управляющий (напр. Адам) получает фиксированную сумму с каждой единицы работы
+# бригады: 100 ₽ с упаковки большой двери, 50 ₽ с антресоли и т.д. Ставка — на
+# каждый вид работы (price_list.manager_rate). Когда работник записывает работу,
+# управляющему автоматически создаётся своя запись, связанная через parent_id.
+
+MANAGER_KEY = 'brigade_manager_id'
+
+# Работы бригады, за которые положена доля управляющему (wl — запись работника)
+_SHARE_CONDITIONS = f"""
+    wl.parent_id IS NULL
+    AND wl.worker_id <> $1
+    AND pl.manager_rate > 0
+    AND pl.price_type <> '{SIDE_JOB_TYPE}'
+"""
+
+
+async def get_brigade_manager_id() -> Optional[int]:
+    async with pool.acquire() as conn:
+        return await _get_brigade_manager_id(conn)
+
+
+async def _get_brigade_manager_id(conn) -> Optional[int]:
+    value = await conn.fetchval(
+        "SELECT value FROM bot_settings WHERE key = $1", MANAGER_KEY)
+    if not value:
+        return None
+    manager_id = int(value)
+    exists = await conn.fetchval(
+        "SELECT 1 FROM workers WHERE telegram_id = $1", manager_id)
+    return manager_id if exists else None
+
+
+async def set_brigade_manager_id(worker_id: Optional[int]):
+    """Кому идёт доля с работы бригады. None — начисления выключены."""
+    async with pool.acquire() as conn:
+        if worker_id is None:
+            await conn.execute("DELETE FROM bot_settings WHERE key = $1", MANAGER_KEY)
+        else:
+            await conn.execute("""
+                INSERT INTO bot_settings (key, value) VALUES ($1, $2)
+                ON CONFLICT (key) DO UPDATE SET value = $2
+            """, MANAGER_KEY, str(worker_id))
+
+
+async def set_work_manager_rate(code: str, rate: float):
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE price_list SET manager_rate = $1 WHERE code = $2", rate, code)
+
+
+async def get_manager_rate_works():
+    """Виды работ со ставкой: [(code, name, emoji, cat_name, rate, price_type)]"""
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(f"""
+            SELECT pl.code, pl.name, c.emoji, c.name, pl.manager_rate, pl.price_type
+            FROM price_list pl JOIN categories c ON pl.category_code = c.code
+            WHERE pl.manager_rate > 0 AND pl.is_active = TRUE
+              AND pl.price_type <> '{SIDE_JOB_TYPE}'
+            ORDER BY c.name, pl.name
+        """)
+        return [tuple(r) for r in rows]
+
+
+async def get_works_for_manager_rate(category_code: str):
+    """Работы категории для настройки ставки: [(code, name, rate, price_type)]"""
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(f"""
+            SELECT code, name, COALESCE(manager_rate, 0), price_type
+            FROM price_list
+            WHERE category_code = $1 AND is_active = TRUE
+              AND price_type <> '{SIDE_JOB_TYPE}'
+            ORDER BY name
+        """, category_code)
+        return [tuple(r) for r in rows]
+
+
+async def _add_manager_share(conn, entry_id: int):
+    """Создаёт управляющему запись-долю с записи работника (если положено)."""
+    manager_id = await _get_brigade_manager_id(conn)
+    if manager_id is None:
+        return
+    await conn.execute(f"""
+        INSERT INTO work_log (worker_id, work_code, quantity, price_per_unit, total,
+                              work_date, comment, parent_id)
+        SELECT $1, wl.work_code, wl.quantity, pl.manager_rate,
+               wl.quantity * pl.manager_rate, wl.work_date,
+               'с бригады: ' || w.name, wl.id
+        FROM work_log wl
+        JOIN price_list pl ON wl.work_code = pl.code
+        JOIN workers w ON wl.worker_id = w.telegram_id
+        WHERE wl.id = $2 AND {_SHARE_CONDITIONS}
+    """, manager_id, entry_id)
+
+
+async def backfill_manager_shares(year: int, month: int) -> dict:
+    """
+    Доначисляет управляющему долю за записи месяца, у которых её ещё нет
+    (напр. ставку задали посреди месяца). Уже начисленное не трогает.
+    """
+    async with pool.acquire() as conn:
+        manager_id = await _get_brigade_manager_id(conn)
+        if manager_id is None:
+            return {'count': 0, 'total': 0.0}
+        rows = await conn.fetch(f"""
+            INSERT INTO work_log (worker_id, work_code, quantity, price_per_unit, total,
+                                  work_date, comment, parent_id)
+            SELECT $1, wl.work_code, wl.quantity, pl.manager_rate,
+                   wl.quantity * pl.manager_rate, wl.work_date,
+                   'с бригады: ' || w.name, wl.id
+            FROM work_log wl
+            JOIN price_list pl ON wl.work_code = pl.code
+            JOIN workers w ON wl.worker_id = w.telegram_id
+            WHERE {_SHARE_CONDITIONS}
+              AND EXTRACT(YEAR FROM wl.work_date) = $2
+              AND EXTRACT(MONTH FROM wl.work_date) = $3
+              AND NOT EXISTS (SELECT 1 FROM work_log ch WHERE ch.parent_id = wl.id)
+            RETURNING total
+        """, manager_id, year, month)
+    return {'count': len(rows), 'total': float(sum(r['total'] for r in rows))}
+
+
+async def get_manager_share_total(year: int, month: int) -> float:
+    """Сколько начислено управляющему с бригады за месяц"""
+    async with pool.acquire() as conn:
+        value = await conn.fetchval("""
+            SELECT COALESCE(SUM(total), 0) FROM work_log
+            WHERE parent_id IS NOT NULL
+              AND EXTRACT(YEAR FROM work_date) = $1
+              AND EXTRACT(MONTH FROM work_date) = $2
+        """, year, month)
+    return float(value or 0)
 
 
 async def delete_last_entry(worker_id: int):
@@ -616,10 +779,10 @@ async def delete_last_entry(worker_id: int):
 
 async def get_entry_by_id(entry_id: int):
     async with pool.acquire() as conn:
-        row = await conn.fetchrow("""
-            SELECT wl.id, pl.name, wl.quantity, wl.price_per_unit, wl.total,
+        row = await conn.fetchrow(f"""
+            SELECT wl.id, {WORK_NAME}, wl.quantity, wl.price_per_unit, wl.total,
                    wl.work_date::TEXT, wl.worker_id, w.name, pl.price_type,
-                   wl.created_at::TEXT, COALESCE(wl.comment, '')
+                   wl.created_at::TEXT, COALESCE(wl.comment, ''), wl.parent_id
             FROM work_log wl
             JOIN price_list pl ON wl.work_code = pl.code
             JOIN workers w ON wl.worker_id = w.telegram_id
@@ -649,9 +812,15 @@ async def update_entry_quantity(entry_id: int, new_quantity: float) -> bool:
             "SELECT price_per_unit FROM work_log WHERE id = $1", entry_id)
         if entry:
             new_total = new_quantity * entry['price_per_unit']
-            await conn.execute(
-                "UPDATE work_log SET quantity = $1, total = $2 WHERE id = $3",
-                new_quantity, new_total, entry_id)
+            async with conn.transaction():
+                await conn.execute(
+                    "UPDATE work_log SET quantity = $1, total = $2 WHERE id = $3",
+                    new_quantity, new_total, entry_id)
+                # доля управляющего меняется вместе с записью работника
+                await conn.execute(
+                    "UPDATE work_log SET quantity = $1, total = $1 * price_per_unit "
+                    "WHERE parent_id = $2",
+                    new_quantity, entry_id)
             return True
         return False
 
@@ -661,12 +830,12 @@ async def update_entry_quantity(entry_id: int, new_quantity: float) -> bool:
 async def get_daily_total(worker_id: int, target_date=None):
     target_date = parse_date(target_date)
     async with pool.acquire() as conn:
-        rows = await conn.fetch("""
-            SELECT wl.work_code, SUM(wl.quantity), wl.price_per_unit, SUM(wl.total), pl.price_type
+        rows = await conn.fetch(f"""
+            SELECT {WORK_NAME}, SUM(wl.quantity), wl.price_per_unit, SUM(wl.total), pl.price_type
             FROM work_log wl
             JOIN price_list pl ON wl.work_code = pl.code
             WHERE wl.worker_id = $1 AND wl.work_date = $2
-            GROUP BY wl.work_code, wl.price_per_unit, pl.price_type
+            GROUP BY wl.work_code, {WORK_NAME}, wl.price_per_unit, pl.price_type
         """, worker_id, target_date)
         return [tuple(row) for row in rows]
 
@@ -736,24 +905,24 @@ async def get_monthly_by_days(worker_id: int, year: int = None, month: int = Non
     if month is None:
         month = date.today().month
     async with pool.acquire() as conn:
-        rows = await conn.fetch("""
-            SELECT wl.work_date::TEXT, pl.name, SUM(wl.quantity),
+        rows = await conn.fetch(f"""
+            SELECT wl.work_date::TEXT, {WORK_NAME}, SUM(wl.quantity),
                    wl.price_per_unit, SUM(wl.total), pl.price_type
             FROM work_log wl
             JOIN price_list pl ON wl.work_code = pl.code
             WHERE wl.worker_id = $1
               AND EXTRACT(YEAR FROM wl.work_date) = $2
               AND EXTRACT(MONTH FROM wl.work_date) = $3
-            GROUP BY wl.work_date, pl.name, wl.price_per_unit, pl.price_type
-            ORDER BY wl.work_date, pl.name
+            GROUP BY wl.work_date, {WORK_NAME}, wl.price_per_unit, pl.price_type
+            ORDER BY wl.work_date, 2
         """, worker_id, year, month)
         return [tuple(row) for row in rows]
 
 
 async def get_today_entries(worker_id: int):
     async with pool.acquire() as conn:
-        rows = await conn.fetch("""
-            SELECT wl.id, pl.name, wl.quantity, wl.price_per_unit, wl.total,
+        rows = await conn.fetch(f"""
+            SELECT wl.id, {WORK_NAME}, wl.quantity, wl.price_per_unit, wl.total,
                    wl.created_at::TEXT, pl.price_type
             FROM work_log wl
             JOIN price_list pl ON wl.work_code = pl.code
@@ -766,8 +935,8 @@ async def get_today_entries(worker_id: int):
 async def get_worker_entries_by_date(worker_id: int, target_date):
     target_date = parse_date(target_date)
     async with pool.acquire() as conn:
-        rows = await conn.fetch("""
-            SELECT wl.id, pl.name, wl.quantity, wl.price_per_unit, wl.total,
+        rows = await conn.fetch(f"""
+            SELECT wl.id, {WORK_NAME}, wl.quantity, wl.price_per_unit, wl.total,
                    wl.work_date::TEXT, wl.created_at::TEXT, pl.price_type
             FROM work_log wl
             JOIN price_list pl ON wl.work_code = pl.code
@@ -779,8 +948,8 @@ async def get_worker_entries_by_date(worker_id: int, target_date):
 
 async def get_worker_recent_entries(worker_id: int, limit: int = 20):
     async with pool.acquire() as conn:
-        rows = await conn.fetch("""
-            SELECT wl.id, pl.name, wl.quantity, wl.price_per_unit, wl.total,
+        rows = await conn.fetch(f"""
+            SELECT wl.id, {WORK_NAME}, wl.quantity, wl.price_per_unit, wl.total,
                    wl.work_date::TEXT, wl.created_at::TEXT, w.name, pl.price_type
             FROM work_log wl
             JOIN price_list pl ON wl.work_code = pl.code
@@ -795,8 +964,8 @@ async def get_worker_recent_entries(worker_id: int, limit: int = 20):
 async def get_worker_entries_by_custom_date(worker_id: int, target_date):
     target_date = parse_date(target_date)
     async with pool.acquire() as conn:
-        rows = await conn.fetch("""
-            SELECT wl.id, pl.name, c.name, c.emoji, wl.quantity,
+        rows = await conn.fetch(f"""
+            SELECT wl.id, {WORK_NAME}, c.name, c.emoji, wl.quantity,
                    wl.price_per_unit, wl.total, wl.created_at::TEXT, pl.price_type
             FROM work_log wl
             JOIN price_list pl ON wl.work_code = pl.code
@@ -813,8 +982,8 @@ async def get_worker_monthly_details(worker_id: int, year: int = None, month: in
     if month is None:
         month = date.today().month
     async with pool.acquire() as conn:
-        rows = await conn.fetch("""
-            SELECT pl.name, c.emoji, c.name, SUM(wl.quantity),
+        rows = await conn.fetch(f"""
+            SELECT {WORK_NAME}, c.emoji, c.name, SUM(wl.quantity),
                    wl.price_per_unit, SUM(wl.total), pl.price_type
             FROM work_log wl
             JOIN price_list pl ON wl.work_code = pl.code
@@ -822,8 +991,8 @@ async def get_worker_monthly_details(worker_id: int, year: int = None, month: in
             WHERE wl.worker_id = $1
               AND EXTRACT(YEAR FROM wl.work_date) = $2
               AND EXTRACT(MONTH FROM wl.work_date) = $3
-            GROUP BY pl.name, c.emoji, c.name, wl.price_per_unit, pl.price_type
-            ORDER BY c.name, pl.name
+            GROUP BY {WORK_NAME}, c.emoji, c.name, wl.price_per_unit, pl.price_type
+            ORDER BY c.name, 1
         """, worker_id, year, month)
         return [tuple(row) for row in rows]
 
@@ -834,9 +1003,9 @@ async def get_all_workers_monthly_details(year: int = None, month: int = None):
     if month is None:
         month = date.today().month
     async with pool.acquire() as conn:
-        rows = await conn.fetch("""
+        rows = await conn.fetch(f"""
             SELECT w.telegram_id, w.name,
-                   pl.name, c.emoji, c.name,
+                   {WORK_NAME}, c.emoji, c.name,
                    SUM(wl.quantity), wl.price_per_unit, SUM(wl.total),
                    COUNT(DISTINCT wl.work_date), pl.price_type
             FROM workers w
@@ -845,8 +1014,8 @@ async def get_all_workers_monthly_details(year: int = None, month: int = None):
                 AND EXTRACT(MONTH FROM wl.work_date) = $2
             LEFT JOIN price_list pl ON wl.work_code = pl.code
             LEFT JOIN categories c ON pl.category_code = c.code
-            GROUP BY w.telegram_id, w.name, pl.name, c.emoji, c.name, wl.price_per_unit, pl.price_type
-            ORDER BY w.name, c.name, pl.name
+            GROUP BY w.telegram_id, w.name, {WORK_NAME}, c.emoji, c.name, wl.price_per_unit, pl.price_type
+            ORDER BY w.name, c.name, 3
         """, year, month)
         return [tuple(row) for row in rows]
 
@@ -857,14 +1026,14 @@ async def get_admin_monthly_detailed_all(year: int = None, month: int = None):
     if month is None:
         month = date.today().month
     async with pool.acquire() as conn:
-        rows = await conn.fetch("""
+        rows = await conn.fetch(f"""
             SELECT
                 w.telegram_id,
                 w.name AS worker_name,
                 c.name AS category_name,
                 c.emoji AS category_emoji,
                 wl.work_date::TEXT,
-                pl.name AS work_name,
+                {WORK_NAME} AS work_name,
                 wl.quantity,
                 wl.price_per_unit,
                 wl.total,
@@ -950,6 +1119,7 @@ async def get_worker_bonus(worker_id: int, year: int, month: int) -> float:
                 FROM work_log wl
                 JOIN price_list pl ON wl.work_code = pl.code
                 WHERE wl.worker_id = $1
+                  AND wl.parent_id IS NULL
                   AND pl.category_code = $2
                   AND EXTRACT(YEAR FROM wl.work_date) = $3
                   AND EXTRACT(MONTH FROM wl.work_date) = $4
@@ -1386,7 +1556,7 @@ async def recalculate_entries_from_march(work_code: str, new_price: float) -> di
         entries = await conn.fetch("""
             SELECT id, quantity, price_per_unit, total
             FROM work_log
-            WHERE work_code = $1 AND work_date >= '2025-03-01'
+            WHERE work_code = $1 AND work_date >= '2025-03-01' AND parent_id IS NULL
         """, work_code)
         
         if not entries:
@@ -1399,7 +1569,7 @@ async def recalculate_entries_from_march(work_code: str, new_price: float) -> di
         await conn.execute("""
             UPDATE work_log
             SET price_per_unit = $1, total = quantity * $1
-            WHERE work_code = $2 AND work_date >= '2025-03-01'
+            WHERE work_code = $2 AND work_date >= '2025-03-01' AND parent_id IS NULL
         """, new_price, work_code)
         
         return {
@@ -1413,8 +1583,8 @@ async def recalculate_entries_from_march(work_code: str, new_price: float) -> di
 async def get_worker_entries_by_month(worker_id: int, year: int, month: int):
     """Получает записи работника за конкретный месяц"""
     async with pool.acquire() as conn:
-        rows = await conn.fetch("""
-            SELECT wl.id, pl.name, wl.quantity, wl.price_per_unit, wl.total,
+        rows = await conn.fetch(f"""
+            SELECT wl.id, {WORK_NAME}, wl.quantity, wl.price_per_unit, wl.total,
                    wl.work_date::TEXT, wl.created_at::TEXT, w.name, pl.price_type
             FROM work_log wl
             JOIN price_list pl ON wl.work_code = pl.code

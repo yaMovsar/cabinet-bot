@@ -68,6 +68,7 @@ def get_edit_keyboard():
          KeyboardButton(text="✏️ Переименовать")],
         [KeyboardButton(text="🔗 Назначить кат."),
          KeyboardButton(text="🔓 Убрать кат.")],
+        [KeyboardButton(text="👔 Доля управляющего")],
         [KeyboardButton(text="🔙 В админ-панель")]
     ], resize_keyboard=True)
 

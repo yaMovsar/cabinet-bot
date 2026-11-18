@@ -57,7 +57,7 @@ async def send_backup(chat_id=None):
             
             tables = ['categories', 'workers', 'price_list', 'worker_categories', 
                       'work_log', 'advances', 'penalties', 'reminder_settings',
-                      'expenses']
+                      'expenses', 'bot_settings']
             
             for table in tables:
                 rows = await pg.fetch(f"SELECT * FROM {table}")

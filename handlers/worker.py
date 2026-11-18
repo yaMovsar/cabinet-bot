@@ -98,9 +98,20 @@ def _date_picker(user_id: int):
     return make_date_picker("wdate", "cancel", allow_past_month=is_admin(user_id))
 
 
+def _is_auto(entry) -> bool:
+    """Запись-доля управляющего: создана автоматически с записи работника"""
+    return bool(entry) and len(entry) > 11 and entry[11] is not None
+
+
+AUTO_ENTRY_TEXT = ("🔗 Начислено автоматически с работы бригады.\n"
+                   "Меняется и удаляется вместе с записью работника.")
+
+
 def _no_edit_reason(entry) -> str:
     if not entry:
         return "❌ Запись не найдена"
+    if _is_auto(entry):
+        return "🔗 Эта запись начислена автоматически — меняется вместе с записью работника"
     if not is_month_open(entry[5]):
         return "🔒 Месяц закрыт — изменить запись нельзя"
     return "🔒 Запись старше 7 дней — изменение недоступно"
@@ -586,7 +597,8 @@ async def view_entry_details(callback: types.CallbackQuery, state: FSMContext):
     unit = unit_of(price_type)
     created_at = entry[9] if len(entry) > 9 else None
     comment = entry[10] if len(entry) > 10 else ""
-    editable = can_edit_entry(created_at, callback.from_user.id, entry[5])
+    auto = _is_auto(entry)
+    editable = not auto and can_edit_entry(created_at, callback.from_user.id, entry[5])
 
     text = f"📦 <b>{entry[1]}</b>\n\n"
     text += f"📅 Дата: {format_date(entry[5])}\n"
@@ -599,7 +611,11 @@ async def view_entry_details(callback: types.CallbackQuery, state: FSMContext):
         text += f"💵 Расценка: {int(entry[3])} ₽/{unit}\n"
         text += f"💰 Сумма: {int(entry[4])} ₽"
 
-    if not editable:
+    if auto:
+        if comment:
+            text += f"\n👤 {comment}"
+        text += f"\n\n{AUTO_ENTRY_TEXT}"
+    elif not editable:
         if not is_month_open(entry[5]):
             text += "\n\n🔒 Месяц закрыт — изменить запись нельзя"
         else:
@@ -624,7 +640,7 @@ async def view_entry_details(callback: types.CallbackQuery, state: FSMContext):
 async def entry_edit_start(callback: types.CallbackQuery, state: FSMContext):
     data = await state.get_data()
     entry = await get_entry_by_id(data["entry_id"])
-    if not entry or not can_edit_entry(entry[9] if len(entry) > 9 else None,
+    if not entry or _is_auto(entry) or not can_edit_entry(entry[9] if len(entry) > 9 else None,
                                        callback.from_user.id, entry[5] if entry else None):
         await callback.answer(_no_edit_reason(entry), show_alert=True)
         return
@@ -641,7 +657,7 @@ async def entry_edit_start(callback: types.CallbackQuery, state: FSMContext):
 async def entry_delete_confirm(callback: types.CallbackQuery, state: FSMContext):
     data = await state.get_data()
     entry = await get_entry_by_id(data["entry_id"])
-    if not entry or not can_edit_entry(entry[9] if len(entry) > 9 else None,
+    if not entry or _is_auto(entry) or not can_edit_entry(entry[9] if len(entry) > 9 else None,
                                        callback.from_user.id, entry[5] if entry else None):
         await callback.answer(_no_edit_reason(entry), show_alert=True)
         return
@@ -703,8 +719,8 @@ async def entry_edit_quantity(message: types.Message, state: FSMContext):
         await state.clear()
         return
     
-    if not can_edit_entry(entry[9] if len(entry) > 9 else None,
-                          message.from_user.id, entry[5]):
+    if _is_auto(entry) or not can_edit_entry(entry[9] if len(entry) > 9 else None,
+                                             message.from_user.id, entry[5]):
         await message.answer(_no_edit_reason(entry))
         await state.clear()
         return
@@ -929,14 +945,12 @@ async def show_daily(message: types.Message, state: FSMContext):
         await message.answer("📭 Сегодня нет записей.")
         return
 
-    all_items = await get_price_list()
-    names = {i[0]: i[1] for i in all_items}
     text = f"📊 {today.strftime('%d.%m.%Y')}:\n\n"
     total = 0
-    for code, qty, price, sub, price_type in rows:
+    for name, qty, price, sub, price_type in rows:
         unit = unit_of(price_type)
         qty_display = format_qty(qty, price_type)
-        text += f"▪️ {names.get(code, code)}: {qty_display} {unit} x {int(price)} руб = {int(sub)} руб\n"
+        text += f"▪️ {name}: {qty_display} {unit} x {int(price)} руб = {int(sub)} руб\n"
         total += sub
     text += f"\n💰 Итого за день: {int(total)} руб"
 
@@ -1097,8 +1111,9 @@ async def import_from_json(message: types.Message):
             for row in data.get('price_list', []):
                 price_type = row.get('price_type', 'unit')
                 await pg.execute(
-                    "INSERT INTO price_list (code, name, price, price_type, category_code, is_active) VALUES ($1, $2, $3, $4, $5, $6)",
-                    row['code'], row['name'], row['price'], price_type, row['category_code'], row.get('is_active', True))
+                    "INSERT INTO price_list (code, name, price, price_type, category_code, is_active, manager_rate) VALUES ($1, $2, $3, $4, $5, $6, $7)",
+                    row['code'], row['name'], row['price'], price_type, row['category_code'], row.get('is_active', True),
+                    row.get('manager_rate') or 0)
             stats['prices'] = len(data.get('price_list', []))
 
             for row in data.get('worker_categories', []):
@@ -1107,12 +1122,32 @@ async def import_from_json(message: types.Message):
                     row['worker_id'], row['category_code'])
             stats['worker_cats'] = len(data.get('worker_categories', []))
 
-            for row in data.get('work_log', []):
+            # id сохраняем: на них ссылаются доли управляющего (parent_id).
+            # Родитель всегда старше доли, поэтому вставляем по возрастанию id.
+            work_rows = sorted(data.get('work_log', []), key=lambda r: r.get('id') or 0)
+            for row in work_rows:
+                if row.get('id'):
+                    await pg.execute(
+                        "INSERT INTO work_log (id, worker_id, work_code, quantity, price_per_unit, total, work_date, created_at, comment, parent_id) "
+                        "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)",
+                        row['id'], row['worker_id'], row['work_code'], row['quantity'], row['price_per_unit'], row['total'],
+                        parse_date_local(row['work_date']), parse_datetime(row['created_at']),
+                        row.get('comment') or '', row.get('parent_id'))
+                else:
+                    await pg.execute(
+                        "INSERT INTO work_log (worker_id, work_code, quantity, price_per_unit, total, work_date, created_at, comment) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+                        row['worker_id'], row['work_code'], row['quantity'], row['price_per_unit'], row['total'],
+                        parse_date_local(row['work_date']), parse_datetime(row['created_at']),
+                        row.get('comment') or '')
+            await pg.execute(
+                "SELECT setval('work_log_id_seq', COALESCE((SELECT MAX(id) FROM work_log), 0) + 1, false)")
+            stats['work_logs'] = len(work_rows)
+
+            await pg.execute("DELETE FROM bot_settings")
+            for row in data.get('bot_settings', []):
                 await pg.execute(
-                    "INSERT INTO work_log (worker_id, work_code, quantity, price_per_unit, total, work_date, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7)",
-                    row['worker_id'], row['work_code'], row['quantity'], row['price_per_unit'], row['total'],
-                    parse_date_local(row['work_date']), parse_datetime(row['created_at']))
-            stats['work_logs'] = len(data.get('work_log', []))
+                    "INSERT INTO bot_settings (key, value) VALUES ($1, $2)",
+                    row['key'], row['value'])
 
             for row in data.get('advances', []):
                 await pg.execute(

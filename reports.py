@@ -4,6 +4,8 @@ from datetime import date, datetime
 from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
 
+from database import WORK_NAME
+
 DATABASE_URL = os.getenv("DATABASE_URL", "")
 
 MONTHS_RU = [
@@ -131,8 +133,8 @@ async def generate_monthly_report(year=None, month=None):
                 _cell(ws2, row, col, h, s, font=s["th_font"], fill=s["th_fill"], center=True)
             row += 1
 
-            records = await conn.fetch("""
-                SELECT wl.work_date::TEXT, pl.name, c.name, wl.quantity,
+            records = await conn.fetch(f"""
+                SELECT wl.work_date::TEXT, {WORK_NAME}, c.name, wl.quantity,
                        wl.price_per_unit, wl.total, wl.created_at::TEXT
                 FROM work_log wl
                 JOIN price_list pl ON wl.work_code = pl.code
@@ -211,13 +213,13 @@ async def generate_monthly_report(year=None, month=None):
             _cell(ws3, row, col, h, s, font=s["th_font"], fill=s["th_fill"], center=True)
         row += 1
 
-        daily = await conn.fetch("""
-            SELECT wl.work_date::TEXT, w.name, pl.name, SUM(wl.total)
+        daily = await conn.fetch(f"""
+            SELECT wl.work_date::TEXT, w.name, {WORK_NAME}, SUM(wl.total)
             FROM work_log wl
             JOIN workers w ON wl.worker_id = w.telegram_id
             JOIN price_list pl ON wl.work_code = pl.code
             WHERE EXTRACT(YEAR FROM wl.work_date) = $1 AND EXTRACT(MONTH FROM wl.work_date) = $2
-            GROUP BY wl.work_date, w.name, pl.name
+            GROUP BY wl.work_date, w.name, {WORK_NAME}
             ORDER BY wl.work_date, w.name
         """, year, month)
 
@@ -265,14 +267,14 @@ async def generate_monthly_report(year=None, month=None):
             _cell(ws4, row, col, h, s, font=s["th_font"], fill=s["th_fill"], center=True)
         row += 1
 
-        cat_data = await conn.fetch("""
-            SELECT c.name, pl.name, SUM(wl.quantity), wl.price_per_unit, SUM(wl.total)
+        cat_data = await conn.fetch(f"""
+            SELECT c.name, {WORK_NAME}, SUM(wl.quantity), wl.price_per_unit, SUM(wl.total)
             FROM work_log wl
             JOIN price_list pl ON wl.work_code = pl.code
             JOIN categories c ON pl.category_code = c.code
             WHERE EXTRACT(YEAR FROM wl.work_date) = $1 AND EXTRACT(MONTH FROM wl.work_date) = $2
-            GROUP BY c.name, pl.name, wl.price_per_unit
-            ORDER BY c.name, pl.name
+            GROUP BY c.name, {WORK_NAME}, wl.price_per_unit
+            ORDER BY c.name, 2
         """, year, month)
 
         cat_grand = 0
@@ -330,8 +332,8 @@ async def generate_worker_report(worker_id, worker_name, year=None, month=None):
 
     conn = await asyncpg.connect(DATABASE_URL)
     try:
-        records = await conn.fetch("""
-            SELECT wl.work_date::TEXT, c.name, pl.name, wl.quantity, wl.price_per_unit, wl.total
+        records = await conn.fetch(f"""
+            SELECT wl.work_date::TEXT, c.name, {WORK_NAME}, wl.quantity, wl.price_per_unit, wl.total
             FROM work_log wl
             JOIN price_list pl ON wl.work_code = pl.code
             JOIN categories c ON pl.category_code = c.code
