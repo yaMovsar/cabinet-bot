@@ -186,6 +186,13 @@ async def init_db():
                 value TEXT
             )
         """)
+        # Управляющий, которому идёт доля с работ категории (уволили — обнуляется)
+        await conn.execute("""
+            ALTER TABLE categories
+            ADD COLUMN IF NOT EXISTS share_manager_id BIGINT
+                REFERENCES workers(telegram_id) ON DELETE SET NULL
+        """)
+        await _migrate_legacy_manager(conn)
         for col, default in (
             ('month_end_enabled', 'TRUE'),
             ('month_end_hour', '12'),
@@ -632,69 +639,120 @@ async def add_work(worker_id: int, work_code: str, quantity: float, price: float
     return total
 
 
-# ==================== ДОЛЯ УПРАВЛЯЮЩЕГО ====================
+# ==================== ДОЛЯ УПРАВЛЯЮЩИХ ====================
 #
-# Управляющий (напр. Адам) получает фиксированную сумму с каждой единицы работы
-# бригады: 100 ₽ с упаковки большой двери, 50 ₽ с антресоли и т.д. Ставка — на
-# каждый вид работы (price_list.manager_rate). Когда работник записывает работу,
-# управляющему автоматически создаётся своя запись, связанная через parent_id.
+# Управляющие получают фиксированную сумму с каждой единицы работы бригады:
+# 100 ₽ с упаковки большой двери, 50 ₽ с антресоли и т.д.
+#   • ставка — на каждый вид работы (price_list.manager_rate);
+#   • управляющий — на категорию (categories.share_manager_id): кровати → один,
+#     шкафы → другой, комоды и тумбы → третий.
+# Когда работник записывает работу, управляющему его категории автоматически
+# создаётся своя запись, связанная через parent_id.
 
-MANAGER_KEY = 'brigade_manager_id'
+LEGACY_MANAGER_KEY = 'brigade_manager_id'  # было: один получатель на весь цех
 
-# Работы бригады, за которые положена доля управляющему (wl — запись работника)
-_SHARE_CONDITIONS = f"""
-    wl.parent_id IS NULL
-    AND wl.worker_id <> $1
-    AND pl.manager_rate > 0
-    AND pl.price_type <> '{SIDE_JOB_TYPE}'
+# Записи работников, за которые положена доля (wl — запись работника, c — категория)
+_SHARE_SELECT = f"""
+    SELECT c.share_manager_id, wl.work_code, wl.quantity, pl.manager_rate,
+           wl.quantity * pl.manager_rate, wl.work_date,
+           'с бригады: ' || w.name, wl.id
+    FROM work_log wl
+    JOIN price_list pl ON wl.work_code = pl.code
+    JOIN categories c ON pl.category_code = c.code
+    JOIN workers w ON wl.worker_id = w.telegram_id
+    WHERE wl.parent_id IS NULL
+      AND c.share_manager_id IS NOT NULL
+      AND wl.worker_id <> c.share_manager_id
+      AND pl.manager_rate > 0
+      AND pl.price_type <> '{SIDE_JOB_TYPE}'
+"""
+
+_SHARE_INSERT = """
+    INSERT INTO work_log (worker_id, work_code, quantity, price_per_unit, total,
+                          work_date, comment, parent_id)
 """
 
 
-async def get_brigade_manager_id() -> Optional[int]:
-    async with pool.acquire() as conn:
-        return await _get_brigade_manager_id(conn)
-
-
-async def _get_brigade_manager_id(conn) -> Optional[int]:
+async def _migrate_legacy_manager(conn):
+    """
+    Раньше получатель был один на весь цех (bot_settings). Переносим его
+    на категории, где есть ставки, чтобы начисления не прервались.
+    """
     value = await conn.fetchval(
-        "SELECT value FROM bot_settings WHERE key = $1", MANAGER_KEY)
-    if not value:
-        return None
-    manager_id = int(value)
-    exists = await conn.fetchval(
-        "SELECT 1 FROM workers WHERE telegram_id = $1", manager_id)
-    return manager_id if exists else None
+        "SELECT value FROM bot_settings WHERE key = $1", LEGACY_MANAGER_KEY)
+    if value is None:
+        return
+    await conn.execute("""
+        UPDATE categories c SET share_manager_id = $1
+        WHERE c.share_manager_id IS NULL
+          AND EXISTS (SELECT 1 FROM workers WHERE telegram_id = $1)
+          AND EXISTS (SELECT 1 FROM price_list pl
+                      WHERE pl.category_code = c.code AND pl.manager_rate > 0)
+    """, int(value))
+    await conn.execute("DELETE FROM bot_settings WHERE key = $1", LEGACY_MANAGER_KEY)
 
 
-async def set_brigade_manager_id(worker_id: Optional[int]):
-    """Кому идёт доля с работы бригады. None — начисления выключены."""
+async def set_category_share_manager(category_code: str, worker_id: Optional[int]):
+    """Кто получает долю с работ категории. None — никто."""
     async with pool.acquire() as conn:
-        if worker_id is None:
-            await conn.execute("DELETE FROM bot_settings WHERE key = $1", MANAGER_KEY)
-        else:
-            await conn.execute("""
-                INSERT INTO bot_settings (key, value) VALUES ($1, $2)
-                ON CONFLICT (key) DO UPDATE SET value = $2
-            """, MANAGER_KEY, str(worker_id))
+        await conn.execute(
+            "UPDATE categories SET share_manager_id = $1 WHERE code = $2",
+            worker_id, category_code)
+
+
+async def get_share_categories():
+    """
+    Категории с управляющими и ставками для главного экрана:
+    [{code, name, emoji, manager_id, manager_name, works: [(name, rate, price_type)]}]
+    Только категории, где назначен управляющий или есть ставки.
+    """
+    async with pool.acquire() as conn:
+        cats = await conn.fetch("""
+            SELECT c.code, c.name, c.emoji, c.share_manager_id, w.name AS manager_name
+            FROM categories c
+            LEFT JOIN workers w ON w.telegram_id = c.share_manager_id
+            ORDER BY c.name
+        """)
+        works = await conn.fetch(f"""
+            SELECT category_code, name, manager_rate, price_type
+            FROM price_list
+            WHERE manager_rate > 0 AND is_active = TRUE
+              AND price_type <> '{SIDE_JOB_TYPE}'
+            ORDER BY name
+        """)
+    by_cat = {}
+    for r in works:
+        by_cat.setdefault(r['category_code'], []).append(
+            (r['name'], float(r['manager_rate']), r['price_type']))
+    result = []
+    for c in cats:
+        cat_works = by_cat.get(c['code'], [])
+        if c['share_manager_id'] is None and not cat_works:
+            continue
+        result.append({
+            'code': c['code'], 'name': c['name'], 'emoji': c['emoji'],
+            'manager_id': c['share_manager_id'], 'manager_name': c['manager_name'],
+            'works': cat_works,
+        })
+    return result
+
+
+async def get_categories_with_share_manager():
+    """Все категории для выбора: [(code, name, emoji, manager_name|None)]"""
+    async with pool.acquire() as conn:
+        rows = await conn.fetch("""
+            SELECT c.code, c.name, c.emoji, w.name
+            FROM categories c
+            LEFT JOIN workers w ON w.telegram_id = c.share_manager_id
+            ORDER BY c.name
+        """)
+        return [tuple(r) for r in rows]
 
 
 async def set_work_manager_rate(code: str, rate: float):
     async with pool.acquire() as conn:
         await conn.execute(
             "UPDATE price_list SET manager_rate = $1 WHERE code = $2", rate, code)
-
-
-async def get_manager_rate_works():
-    """Виды работ со ставкой: [(code, name, emoji, cat_name, rate, price_type)]"""
-    async with pool.acquire() as conn:
-        rows = await conn.fetch(f"""
-            SELECT pl.code, pl.name, c.emoji, c.name, pl.manager_rate, pl.price_type
-            FROM price_list pl JOIN categories c ON pl.category_code = c.code
-            WHERE pl.manager_rate > 0 AND pl.is_active = TRUE
-              AND pl.price_type <> '{SIDE_JOB_TYPE}'
-            ORDER BY c.name, pl.name
-        """)
-        return [tuple(r) for r in rows]
 
 
 async def get_works_for_manager_rate(category_code: str):
@@ -711,60 +769,38 @@ async def get_works_for_manager_rate(category_code: str):
 
 
 async def _add_manager_share(conn, entry_id: int):
-    """Создаёт управляющему запись-долю с записи работника (если положено)."""
-    manager_id = await _get_brigade_manager_id(conn)
-    if manager_id is None:
-        return
-    await conn.execute(f"""
-        INSERT INTO work_log (worker_id, work_code, quantity, price_per_unit, total,
-                              work_date, comment, parent_id)
-        SELECT $1, wl.work_code, wl.quantity, pl.manager_rate,
-               wl.quantity * pl.manager_rate, wl.work_date,
-               'с бригады: ' || w.name, wl.id
-        FROM work_log wl
-        JOIN price_list pl ON wl.work_code = pl.code
-        JOIN workers w ON wl.worker_id = w.telegram_id
-        WHERE wl.id = $2 AND {_SHARE_CONDITIONS}
-    """, manager_id, entry_id)
+    """Создаёт управляющему категории запись-долю с записи работника (если положено)."""
+    await conn.execute(_SHARE_INSERT + _SHARE_SELECT + " AND wl.id = $1", entry_id)
 
 
 async def backfill_manager_shares(year: int, month: int) -> dict:
     """
-    Доначисляет управляющему долю за записи месяца, у которых её ещё нет
-    (напр. ставку задали посреди месяца). Уже начисленное не трогает.
+    Доначисляет управляющим долю за записи месяца, у которых её ещё нет
+    (напр. ставку или управляющего задали посреди месяца). Уже начисленное не трогает.
     """
     async with pool.acquire() as conn:
-        manager_id = await _get_brigade_manager_id(conn)
-        if manager_id is None:
-            return {'count': 0, 'total': 0.0}
-        rows = await conn.fetch(f"""
-            INSERT INTO work_log (worker_id, work_code, quantity, price_per_unit, total,
-                                  work_date, comment, parent_id)
-            SELECT $1, wl.work_code, wl.quantity, pl.manager_rate,
-                   wl.quantity * pl.manager_rate, wl.work_date,
-                   'с бригады: ' || w.name, wl.id
-            FROM work_log wl
-            JOIN price_list pl ON wl.work_code = pl.code
-            JOIN workers w ON wl.worker_id = w.telegram_id
-            WHERE {_SHARE_CONDITIONS}
-              AND EXTRACT(YEAR FROM wl.work_date) = $2
-              AND EXTRACT(MONTH FROM wl.work_date) = $3
+        rows = await conn.fetch(_SHARE_INSERT + _SHARE_SELECT + """
+              AND EXTRACT(YEAR FROM wl.work_date) = $1
+              AND EXTRACT(MONTH FROM wl.work_date) = $2
               AND NOT EXISTS (SELECT 1 FROM work_log ch WHERE ch.parent_id = wl.id)
             RETURNING total
-        """, manager_id, year, month)
+        """, year, month)
     return {'count': len(rows), 'total': float(sum(r['total'] for r in rows))}
 
 
-async def get_manager_share_total(year: int, month: int) -> float:
-    """Сколько начислено управляющему с бригады за месяц"""
+async def get_manager_share_totals(year: int, month: int):
+    """Сколько начислено каждому управляющему с бригады за месяц: [(name, total)]"""
     async with pool.acquire() as conn:
-        value = await conn.fetchval("""
-            SELECT COALESCE(SUM(total), 0) FROM work_log
-            WHERE parent_id IS NOT NULL
-              AND EXTRACT(YEAR FROM work_date) = $1
-              AND EXTRACT(MONTH FROM work_date) = $2
+        rows = await conn.fetch("""
+            SELECT w.name, SUM(wl.total) AS total
+            FROM work_log wl JOIN workers w ON wl.worker_id = w.telegram_id
+            WHERE wl.parent_id IS NOT NULL
+              AND EXTRACT(YEAR FROM wl.work_date) = $1
+              AND EXTRACT(MONTH FROM wl.work_date) = $2
+            GROUP BY w.name
+            ORDER BY w.name
         """, year, month)
-    return float(value or 0)
+    return [(r['name'], float(r['total'])) for r in rows]
 
 
 async def delete_last_entry(worker_id: int):

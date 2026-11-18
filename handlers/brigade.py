@@ -1,11 +1,13 @@
 """
-Доля управляющего с работы бригады.
+Доля управляющих с работы бригады.
 
-Управляющий (напр. Адам) получает фиксированную сумму с каждой единицы работы,
-сделанной бригадой: 100 ₽ с упаковки большой двери, 50 ₽ с антресоли и т.д.
-Ставка задаётся на каждый вид работы. Когда работник записывает работу, бот сам
-создаёт управляющему запись «… (с бригады)» — она правится и удаляется вместе
-с записью работника.
+Управляющие получают фиксированную сумму с каждой единицы работы бригады:
+100 ₽ с упаковки большой двери, 50 ₽ с антресоли и т.д.
+  • управляющий назначается на категорию: кровати → один, шкафы → другой,
+    комоды и тумбы → третий;
+  • ставка задаётся на каждый вид работы.
+Когда работник записывает работу, бот сам создаёт управляющему его категории
+запись «… (с бригады)» — она правится и удаляется вместе с записью работника.
 
 Админ-панель → ✏️ Редактировать → 👔 Доля управляющего
 """
@@ -17,10 +19,10 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from database import (
-    get_brigade_manager_id, set_brigade_manager_id,
-    set_work_manager_rate, get_manager_rate_works, get_works_for_manager_rate,
-    backfill_manager_shares, get_manager_share_total,
-    get_categories, get_all_workers, get_worker, get_work_by_code,
+    set_category_share_manager, get_share_categories, get_categories_with_share_manager,
+    set_work_manager_rate, get_works_for_manager_rate,
+    backfill_manager_shares, get_manager_share_totals,
+    get_all_workers, get_worker, get_work_by_code,
 )
 from states import AdminBrigadeShare
 from handlers.filters import AdminFilter
@@ -40,46 +42,40 @@ def _rate_text(rate, price_type) -> str:
 
 
 async def _home_view():
-    """Главный экран: кто получает, ставки, сколько начислено за месяц"""
+    """Главный экран: категории → управляющий и ставки, начислено за месяц"""
     today = date.today()
-    manager_id = await get_brigade_manager_id()
-    works = await get_manager_rate_works()
+    month = MONTHS_RU[today.month].lower()
+    cats = await get_share_categories()
 
-    text = "👔 Доля управляющего с работы бригады\n\n"
-    if manager_id:
-        worker = await get_worker(manager_id)
-        name = worker['name'] if worker else str(manager_id)
-        text += f"👤 Получатель: {name}\n"
-    else:
-        text += "👤 Получатель не выбран — начисления выключены\n"
+    text = "👔 Доля управляющих с работы бригады\n"
+    if not cats:
+        text += "\nПока ничего не настроено.\n"
+    for cat in cats:
+        who = f"👤 {cat['manager_name']}" if cat['manager_name'] else "👤 не назначен"
+        text += f"\n{cat['emoji']} {cat['name']} → {who}\n"
+        if cat['works']:
+            for name, rate, price_type in cat['works']:
+                text += f"   • {name} — {_rate_text(rate, price_type)}\n"
+        else:
+            text += "   • ставок нет\n"
+        if cat['works'] and not cat['manager_name']:
+            text += "   ⚠️ без управляющего — не начисляется\n"
 
-    if works:
-        text += "\n💵 Ставки (за 1 ед. работы бригады):\n"
-        for _code, name, emoji, _cat, rate, price_type in works:
-            text += f"{emoji} {name} — {_rate_text(rate, price_type)}\n"
-    else:
-        text += "\n💵 Ставки ещё не заданы\n"
+    totals = await get_manager_share_totals(today.year, today.month)
+    if totals:
+        text += f"\n📊 Начислено за {month}:\n"
+        for name, total in totals:
+            text += f"   {name}: {_money(total)} ₽\n"
 
-    if manager_id:
-        total = await get_manager_share_total(today.year, today.month)
-        text += f"\n📊 Начислено за {MONTHS_RU[today.month].lower()}: {_money(total)} ₽\n"
-
-    text += ("\nℹ️ Когда работник записывает работу, получателю автоматически "
-             "создаётся запись «… (с бригады)». Работник изменил или удалил "
-             "свою запись — доля меняется вместе с ней.")
+    text += ("\nℹ️ Когда работник записывает работу, управляющему его категории "
+             "автоматически создаётся запись «… (с бригады)». Работник изменил или "
+             "удалил свою запись — доля меняется вместе с ней.")
 
     buttons = [
+        [InlineKeyboardButton(text="👤 Назначить управляющего", callback_data="bm:who")],
         [InlineKeyboardButton(text="💵 Задать ставку", callback_data="bm:rate")],
-        [InlineKeyboardButton(
-            text="👤 Сменить получателя" if manager_id else "👤 Выбрать получателя",
-            callback_data="bm:who")],
+        [InlineKeyboardButton(text=f"🔄 Доначислить за {month}", callback_data="bm:fill")],
     ]
-    if manager_id:
-        buttons.append([InlineKeyboardButton(
-            text=f"🔄 Доначислить за {MONTHS_RU[today.month].lower()}",
-            callback_data="bm:fill")])
-        buttons.append([InlineKeyboardButton(
-            text="⛔ Выключить начисления", callback_data="bm:off")])
     return text, InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
@@ -90,6 +86,17 @@ def _back_home_row():
 async def _show_home(callback: types.CallbackQuery, prefix: str = ""):
     text, kb = await _home_view()
     await safe_edit_text(callback.message, prefix + text, reply_markup=kb)
+
+
+async def _categories_kb(prefix: str, show_manager: bool) -> InlineKeyboardMarkup:
+    buttons = []
+    for code, name, emoji, manager_name in await get_categories_with_share_manager():
+        label = f"{emoji} {name}"
+        if show_manager:
+            label += f" → {manager_name}" if manager_name else " → —"
+        buttons.append([InlineKeyboardButton(text=label, callback_data=f"{prefix}:{code}")])
+    buttons.append(_back_home_row())
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
 # ==================== ВХОД ====================
@@ -110,47 +117,60 @@ async def brigade_home(callback: types.CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
-# ==================== ПОЛУЧАТЕЛЬ ====================
+# ==================== УПРАВЛЯЮЩИЙ КАТЕГОРИИ ====================
 
 @router.callback_query(F.data == "bm:who")
-async def brigade_choose_manager(callback: types.CallbackQuery, state: FSMContext):
+async def brigade_who_categories(callback: types.CallbackQuery, state: FSMContext):
     if not is_admin(callback.from_user.id):
         return await callback.answer()
-    current = await get_brigade_manager_id()
-    buttons = [
-        [InlineKeyboardButton(text=("✅ " if wid == current else "") + name,
-                              callback_data=f"bm_set:{wid}")]
-        for wid, name in await get_all_workers()
-    ]
-    buttons.append(_back_home_row())
     await safe_edit_text(
         callback.message,
-        "👤 Кто получает долю с работы бригады?\n\n"
-        "Уже начисленные записи останутся у прежнего получателя — "
+        "👤 С какой категории назначить управляющего?\n(справа — кто получает сейчас)",
+        reply_markup=await _categories_kb("bm_mc", show_manager=True))
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("bm_mc:"))
+async def brigade_who_workers(callback: types.CallbackQuery, state: FSMContext):
+    if not is_admin(callback.from_user.id):
+        return await callback.answer()
+    cat_code = callback.data.split(":", 1)[1]
+    await state.update_data(bm_cat=cat_code)
+    buttons = [
+        [InlineKeyboardButton(text=name, callback_data=f"bm_ms:{wid}")]
+        for wid, name in await get_all_workers()
+    ]
+    buttons.append([InlineKeyboardButton(text="🚫 Никто (не начислять)", callback_data="bm_ms:0")])
+    buttons.append([InlineKeyboardButton(text="🔙 К категориям", callback_data="bm:who")])
+    await safe_edit_text(
+        callback.message,
+        "👤 Кто получает долю с работ этой категории?\n\n"
+        "Уже начисленные записи останутся у прежнего управляющего — "
         "новому пойдёт только то, что запишут после смены.",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
     await callback.answer()
 
 
-@router.callback_query(F.data.startswith("bm_set:"))
+@router.callback_query(F.data.startswith("bm_ms:"))
 async def brigade_set_manager(callback: types.CallbackQuery, state: FSMContext):
     if not is_admin(callback.from_user.id):
         return await callback.answer()
+    cat_code = (await state.get_data()).get("bm_cat")
+    if not cat_code:
+        await callback.answer("⚠️ Сессия сброшена — выберите категорию заново", show_alert=True)
+        return await _show_home(callback)
     wid = int(callback.data.split(":")[1])
-    worker = await get_worker(wid)
-    if not worker:
-        return await callback.answer("❌ Работник не найден", show_alert=True)
-    await set_brigade_manager_id(wid)
-    await _show_home(callback, f"✅ Получатель: {worker['name']}\n\n")
-    await callback.answer()
-
-
-@router.callback_query(F.data == "bm:off")
-async def brigade_off(callback: types.CallbackQuery, state: FSMContext):
-    if not is_admin(callback.from_user.id):
-        return await callback.answer()
-    await set_brigade_manager_id(None)
-    await _show_home(callback, "⛔ Начисления выключены. Уже начисленное не тронуто.\n\n")
+    if wid == 0:
+        await set_category_share_manager(cat_code, None)
+        prefix = "✅ С этой категории больше никто не получает долю.\n\n"
+    else:
+        worker = await get_worker(wid)
+        if not worker:
+            return await callback.answer("❌ Работник не найден", show_alert=True)
+        await set_category_share_manager(cat_code, wid)
+        prefix = f"✅ Управляющий назначен: {worker['name']}\n\n"
+    await state.clear()
+    await _show_home(callback, prefix)
     await callback.answer()
 
 
@@ -178,18 +198,17 @@ async def brigade_rate_categories(callback: types.CallbackQuery, state: FSMConte
     if not is_admin(callback.from_user.id):
         return await callback.answer()
     await state.clear()
-    buttons = [
-        [InlineKeyboardButton(text=f"{emoji} {name}", callback_data=f"bm_cat:{code}")]
-        for code, name, emoji in await get_categories()
-    ]
-    buttons.append(_back_home_row())
     await safe_edit_text(callback.message, "💵 Выберите категорию:",
-                         reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+                         reply_markup=await _categories_kb("bm_cat", show_manager=False))
     await callback.answer()
 
 
-async def _show_category_works(callback: types.CallbackQuery, cat_code: str):
-    works = await get_works_for_manager_rate(cat_code)
+@router.callback_query(F.data.startswith("bm_cat:"))
+async def brigade_rate_works(callback: types.CallbackQuery, state: FSMContext):
+    if not is_admin(callback.from_user.id):
+        return await callback.answer()
+    await state.clear()
+    works = await get_works_for_manager_rate(callback.data.split(":", 1)[1])
     if not works:
         await callback.answer("В этой категории нет видов работ", show_alert=True)
         return
@@ -204,14 +223,6 @@ async def _show_category_works(callback: types.CallbackQuery, cat_code: str):
     await callback.answer()
 
 
-@router.callback_query(F.data.startswith("bm_cat:"))
-async def brigade_rate_works(callback: types.CallbackQuery, state: FSMContext):
-    if not is_admin(callback.from_user.id):
-        return await callback.answer()
-    await state.clear()
-    await _show_category_works(callback, callback.data.split(":", 1)[1])
-
-
 @router.callback_query(F.data.startswith("bm_w:"))
 async def brigade_rate_ask(callback: types.CallbackQuery, state: FSMContext):
     if not is_admin(callback.from_user.id):
@@ -222,7 +233,7 @@ async def brigade_rate_ask(callback: types.CallbackQuery, state: FSMContext):
         return await callback.answer("❌ Работа не найдена", show_alert=True)
     # work: code, name, price, price_type, category_code, cat_name, emoji
     await state.set_state(AdminBrigadeShare.entering_rate)
-    await state.update_data(bm_code=code, bm_cat=work[4])
+    await state.update_data(bm_code=code)
     await safe_edit_text(
         callback.message,
         f"💵 {work[6]} {work[1]}\n\n"

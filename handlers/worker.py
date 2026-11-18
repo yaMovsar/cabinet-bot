@@ -1108,6 +1108,14 @@ async def import_from_json(message: types.Message):
                     row['telegram_id'], row['name'], parse_datetime(row['registered_at']))
             stats['workers'] = len(data.get('workers', []))
 
+            # управляющий категории ссылается на работника — ставим после работников
+            for row in data.get('categories', []):
+                if row.get('share_manager_id'):
+                    await pg.execute(
+                        "UPDATE categories SET share_manager_id = $1 WHERE code = $2 "
+                        "AND EXISTS (SELECT 1 FROM workers WHERE telegram_id = $1)",
+                        row['share_manager_id'], row['code'])
+
             for row in data.get('price_list', []):
                 price_type = row.get('price_type', 'unit')
                 await pg.execute(
